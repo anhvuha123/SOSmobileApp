@@ -1,0 +1,23 @@
+name: appmobilesos
+description: A new Flutter project.
+publish_to: none
+version: 1.0.0+1
+environment:
+  sdk: ^3.10.3
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  firebase_core: ^2.32.0
+  cloud_firestore: ^4.17.5
+  google_maps_flutter: ^2.3.0
+  http: ^0.13.6
+  flutter_map: ^3.1.0
+  latlong2: ^0.8.2
+  geolocator: ^9.0.2
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+flutter:
+  uses-material-design: true
