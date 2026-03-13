@@ -34,7 +34,9 @@ class _ReportScreenState extends State<ReportScreen> {
     setState(() => _submitting = true);
 
     try {
-      final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      );
       final report = EmergencyReport(
         id: '',
         title: _titleController.text.trim(),
