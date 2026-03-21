@@ -3,6 +3,9 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 import 'report_screen.dart';
+import 'sos.dart';
+import '../models/rescuer.dart';
+import '../services/firebase_service.dart';
 
 class HomeScreen extends StatefulWidget {
   static const String routeName = '/';
@@ -63,6 +66,9 @@ class _HomeScreenState extends State<HomeScreen> {
   void showSOS() {
     showModalBottomSheet(
       context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (context) {
         return Padding(
           padding: const EdgeInsets.all(20),
@@ -87,7 +93,54 @@ class _HomeScreenState extends State<HomeScreen> {
                 title: const Text("Cầu cứu khẩn cấp"),
                 onTap: () {
                   Navigator.pop(context);
-                  Navigator.pushNamed(context, ReportScreen.routeName);
+                  Navigator.pushNamed(context, SosScreen.routeName);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void showRescuers() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                "Đội cứu trợ gần đây",
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 20),
+              StreamBuilder<List<Rescuer>>(
+                stream: FirebaseService.streamRescuers(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return const Text("Lỗi tải dữ liệu");
+                  }
+                  if (!snapshot.hasData) {
+                    return const CircularProgressIndicator();
+                  }
+                  final rescuers = snapshot.data!;
+                  return Column(
+                    children: [
+                      Text("Hiện có ${rescuers.length} thành viên cứu trợ tại khu vực này"),
+                      const SizedBox(height: 10),
+                      ...rescuers.map((rescuer) => ListTile(
+                        leading: const Icon(Icons.person),
+                        title: Text(rescuer.name),
+                        subtitle: Text(rescuer.isAvailable ? "Sẵn sàng" : "Đang bận"),
+                      )),
+                    ],
+                  );
                 },
               ),
             ],
@@ -109,7 +162,7 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Icon(Icons.warning, color: Colors.white),
             SizedBox(width: 8),
-            Text("SOS: KHẨN CẤP"),
+            Text("SOS"),
           ],
         ),
         actions: const [
@@ -268,42 +321,54 @@ class _HomeScreenState extends State<HomeScreen> {
             bottom: 0,
             left: 0,
             right: 0,
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(20),
-                ),
+            child: Card(
+              margin: EdgeInsets.zero,
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-
-                  const Text(
-                    "Danh sách cứu hộ khẩn cấp",
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  ...demoReports.map((r) {
-                    return ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor:
-                            const Color.fromRGBO(255, 106, 0, 0.2),
-                        child: const Icon(Icons.home,
-                            color: Color(0xffff6a00)),
-                      ),
-                      title: Text(r["title"]),
-                      subtitle:
-                          const Text("Phát tín hiệu 5 phút trước"),
-                      trailing:
-                          const Icon(Icons.chevron_right),
-                      onTap: () => moveTo(r),
-                    );
-                  }),
-                ],
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "Danh sách cứu hộ khẩn cấp",
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 10),
+                    ...demoReports.map((r) {
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () => moveTo(r),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  backgroundColor: const Color.fromRGBO(255, 106, 0, 0.2),
+                                  child: const Icon(Icons.home, color: Color(0xffff6a00)),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(r["title"], style: const TextStyle(fontWeight: FontWeight.bold)),
+                                      const Text("Phát tín hiệu 5 phút trước", style: TextStyle(color: Colors.grey)),
+                                    ],
+                                  ),
+                                ),
+                                const Icon(Icons.chevron_right),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
+                ),
               ),
             ),
           )
@@ -330,6 +395,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
           if (index == 2) {
             Navigator.pushNamed(context, ReportScreen.routeName);
+          } else if (index == 3) {
+            showRescuers();
           }
         },
         items: [
@@ -340,7 +407,7 @@ class _HomeScreenState extends State<HomeScreen> {
           BottomNavigationBarItem(
               icon: Icon(Icons.description), label: "Báo cáo"),
           BottomNavigationBarItem(
-              icon: Icon(Icons.settings), label: "Cài đặt"),
+              icon: Icon(Icons.group), label: "Đội cứu trợ"),
         ],
       ),
     );

@@ -34,44 +34,42 @@ class _ReportScreenState extends State<ReportScreen> {
           children: [
 
             /// CARD VỊ TRÍ
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.shade100,
-                      borderRadius: BorderRadius.circular(12),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade100,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.location_on, color: Colors.orange),
                     ),
-                    child: const Icon(Icons.location_on, color: Colors.orange),
-                  ),
 
-                  const SizedBox(width: 12),
+                    const SizedBox(width: 12),
 
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Vị trí hiện tại của bạn",
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.orange),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          "123 Đường Lê Lợi, Quận 1, TP.HCM",
-                          style: TextStyle(fontSize: 13),
-                        ),
-                      ],
-                    ),
-                  )
-                ],
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "Vị trí hiện tại của bạn",
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.orange),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            "123 Đường Lê Lợi, Quận 1, TP.HCM",
+                            style: TextStyle(fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    )
+                  ],
+                ),
               ),
             ),
 
@@ -92,12 +90,10 @@ class _ReportScreenState extends State<ReportScreen> {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               children: [
-
                 _disasterBox("Ngập lụt", Icons.flood),
                 _disasterBox("Sạt lở", Icons.landscape),
                 _disasterBox("Hư hỏng", Icons.build),
                 _disasterBox("Khác", Icons.more_horiz),
-
               ],
             ),
 
@@ -177,33 +173,45 @@ class _ReportScreenState extends State<ReportScreen> {
 
   /// BOX LOẠI SỰ CỐ
   Widget _disasterBox(String title, IconData icon) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
+    return Card(
+      child: InkWell(
+        onTap: () {
+          // Handle selection
+        },
         borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 36, color: Colors.orange),
-          const SizedBox(height: 10),
-          Text(title),
-        ],
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 36, color: Colors.orange),
+              const SizedBox(height: 10),
+              Text(title, textAlign: TextAlign.center),
+            ],
+          ),
+        ),
       ),
     );
   }
 
   /// BOX HÌNH ẢNH
   Widget _imageBox() {
-    return Container(
-      height: 80,
-      width: 80,
-      decoration: BoxDecoration(
+    return Card(
+      child: InkWell(
+        onTap: () {
+          // Handle image selection
+        },
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.orange),
+        child: Container(
+          height: 80,
+          width: 80,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.orange),
+          ),
+          child: const Icon(Icons.camera_alt, color: Colors.orange),
+        ),
       ),
-      child: const Icon(Icons.camera_alt, color: Colors.orange),
     );
   }
 }

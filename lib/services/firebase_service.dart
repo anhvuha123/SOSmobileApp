@@ -2,10 +2,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import '../models/emergency_report.dart';
+import '../models/rescuer.dart';
 
 class FirebaseService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static final CollectionReference _reportsRef = _firestore.collection('reports');
+  static final CollectionReference _rescuersRef = _firestore.collection('rescuers');
 
   static const FirebaseOptions _webFirebaseOptions = FirebaseOptions(
     apiKey: 'YOUR_API_KEY',
@@ -35,5 +37,38 @@ class FirebaseService {
     return _reportsRef.orderBy('time', descending: true).snapshots().map(
           (snapshot) => snapshot.docs.map((doc) => EmergencyReport.fromFirestore(doc)).toList(),
         );
+  }
+
+  static Future<void> addRescuer(Rescuer rescuer) async {
+    await _rescuersRef.doc(rescuer.id).set(rescuer.toMap());
+  }
+
+  static Future<void> updateRescuerLocation(String id, double lat, double lng) async {
+    await _rescuersRef.doc(id).update({
+      'lat': lat,
+      'lng': lng,
+      'lastUpdated': Timestamp.now(),
+    });
+  }
+
+  static Stream<List<Rescuer>> streamRescuers() {
+    return _rescuersRef.where('isAvailable', isEqualTo: true).snapshots().map(
+          (snapshot) => snapshot.docs.map((doc) => Rescuer.fromFirestore(doc)).toList(),
+        );
+  }
+
+  static Future<List<Rescuer>> getNearbyRescuers(double lat, double lng, double radiusKm) async {
+    // Note: This is a simplified version. In production, use GeoFire or similar for geospatial queries.
+    final querySnapshot = await _rescuersRef.where('isAvailable', isEqualTo: true).get();
+    final rescuers = querySnapshot.docs.map((doc) => Rescuer.fromFirestore(doc)).toList();
+
+    // Filter by distance (simple approximation)
+    const double kmPerDegree = 111.32;
+    final rescuersNearby = rescuers.where((r) {
+      final distance = ((r.lat - lat).abs() * kmPerDegree) + ((r.lng - lng).abs() * kmPerDegree * 0.8);
+      return distance <= radiusKm;
+    }).toList();
+
+    return rescuersNearby;
   }
 }
