@@ -1,5 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+enum ReportStatus {
+  pending,
+  inProgress,
+  completed,
+  cancelled,
+}
+
 class EmergencyReport {
   final String id;
   final String title;
@@ -9,6 +16,7 @@ class EmergencyReport {
   final double lng;
   final String level;
   final Timestamp time;
+  final ReportStatus status;
 
   EmergencyReport({
     required this.id,
@@ -19,6 +27,7 @@ class EmergencyReport {
     required this.lng,
     required this.level,
     required this.time,
+    this.status = ReportStatus.pending,
   });
 
   factory EmergencyReport.fromFirestore(DocumentSnapshot doc) {
@@ -32,6 +41,10 @@ class EmergencyReport {
       lng: (data['lng'] ?? 0.0).toDouble(),
       level: data['level'] ?? 'low',
       time: data['time'] ?? Timestamp.now(),
+      status: ReportStatus.values.firstWhere(
+        (e) => e.name == data['status'],
+        orElse: () => ReportStatus.pending,
+      ),
     );
   }
 
@@ -44,6 +57,31 @@ class EmergencyReport {
       'lng': lng,
       'level': level,
       'time': time,
+      'status': status.name,
     };
+  }
+
+  EmergencyReport copyWith({
+    String? id,
+    String? title,
+    String? subtitle,
+    int? people,
+    double? lat,
+    double? lng,
+    String? level,
+    Timestamp? time,
+    ReportStatus? status,
+  }) {
+    return EmergencyReport(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      subtitle: subtitle ?? this.subtitle,
+      people: people ?? this.people,
+      lat: lat ?? this.lat,
+      lng: lng ?? this.lng,
+      level: level ?? this.level,
+      time: time ?? this.time,
+      status: status ?? this.status,
+    );
   }
 }

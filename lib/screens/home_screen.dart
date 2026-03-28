@@ -4,6 +4,7 @@ import 'package:latlong2/latlong.dart';
 
 import 'report_screen.dart';
 import 'sos.dart';
+import '../models/emergency_report.dart';
 import '../models/rescuer.dart';
 import '../services/firebase_service.dart';
 
@@ -24,27 +25,10 @@ class _HomeScreenState extends State<HomeScreen> {
   LatLng center = const LatLng(10.762622, 106.660172);
   double zoom = 13;
 
-  Map<String, dynamic>? selected;
+  EmergencyReport? selected;
 
-  final List<Map<String, dynamic>> demoReports = [
-    {
-      "title": "Hẻm 154, Q8",
-      "subtitle": "Ngập sâu",
-      "people": 12,
-      "lat": 10.75,
-      "lng": 106.65
-    },
-    {
-      "title": "Khu dân cư Q7",
-      "subtitle": "Cần di dời",
-      "people": 5,
-      "lat": 10.73,
-      "lng": 106.70
-    },
-  ];
-
-  void moveTo(Map<String, dynamic> r) {
-    final LatLng pos = LatLng(r["lat"], r["lng"]);
+  void moveTo(EmergencyReport r) {
+    final LatLng pos = LatLng(r.lat, r.lng);
 
     _mapController.move(pos, 15);
 
@@ -173,206 +157,289 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
 
-      body: Stack(
-        children: [
-
-          /// MAP
-          FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter: center,
-              initialZoom: zoom,
-            ),
+      body: StreamBuilder<List<EmergencyReport>>(
+        stream: FirebaseService.streamReports(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Center(child: Text('Lỗi: ${snapshot.error}'));
+          }
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final reports = snapshot.data!;
+          return Stack(
             children: [
 
-              TileLayer(
-                urlTemplate:
-                    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-                subdomains: const ['a', 'b', 'c'],
+              /// MAP
+              FlutterMap(
+                mapController: _mapController,
+                options: MapOptions(
+                  initialCenter: center,
+                  initialZoom: zoom,
+                ),
+                children: [
+
+                  TileLayer(
+                    urlTemplate:
+                        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                    subdomains: const ['a', 'b', 'c'],
+                  ),
+
+                  MarkerLayer(
+                    markers: reports.map((r) {
+                      return Marker(
+                        point: LatLng(r.lat, r.lng),
+                        width: 40,
+                        height: 40,
+                        child: GestureDetector(
+                          onTap: () => moveTo(r),
+                          child: const Icon(
+                            Icons.warning,
+                            color: Colors.red,
+                            size: 35,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  )
+                ],
               ),
 
-              MarkerLayer(
-                markers: demoReports.map((r) {
-                  return Marker(
-                    point: LatLng(r["lat"], r["lng"]),
-                    width: 40,
-                    height: 40,
-                    child: GestureDetector(
-                      onTap: () => moveTo(r),
-                      child: const Icon(
-                        Icons.warning,
-                        color: Colors.red,
-                        size: 35,
-                      ),
+              /// ZOOM BUTTON
+              Positioned(
+                right: 10,
+                top: 20,
+                child: Column(
+                  children: [
+                    FloatingActionButton(
+                      heroTag: "zoomIn",
+                      onPressed: zoomIn,
+                      child: const Icon(Icons.add),
                     ),
-                  );
-                }).toList(),
-              )
-            ],
-          ),
+                    const SizedBox(height: 6),
+                    FloatingActionButton(
+                      heroTag: "zoomOut",
+                      onPressed: zoomOut,
+                      child: const Icon(Icons.remove),
+                    ),
+                    const SizedBox(height: 6),
+                    const FloatingActionButton(
+                      heroTag: "gps",
+                      onPressed: null,
+                      child: Icon(Icons.my_location),
+                    ),
+                  ],
+                ),
+              ),
 
-          /// ZOOM BUTTON
-          Positioned(
-            right: 10,
-            top: 20,
-            child: Column(
-              children: [
-                FloatingActionButton.small(
-                  heroTag: "zoomIn",
-                  onPressed: zoomIn,
-                  child: const Icon(Icons.add),
-                ),
-                const SizedBox(height: 6),
-                FloatingActionButton.small(
-                  heroTag: "zoomOut",
-                  onPressed: zoomOut,
-                  child: const Icon(Icons.remove),
-                ),
-                const SizedBox(height: 6),
-                const FloatingActionButton.small(
-                  heroTag: "gps",
-                  onPressed: null,
-                  child: Icon(Icons.my_location),
-                ),
-              ],
-            ),
-          ),
-
-          /// CARD INFO
-          if (selected != null)
-            Positioned(
-              left: 16,
-              right: 16,
-              bottom: 200,
-              child: Card(
-                elevation: 10,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    children: [
-
-                      Row(
+              /// CARD INFO
+              if (selected != null)
+                Positioned(
+                  left: 16,
+                  right: 16,
+                  bottom: 200,
+                  child: Card(
+                    elevation: 10,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
                         children: [
 
-                          Container(
-                            width: 80,
-                            height: 80,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              color: Colors.grey.shade300,
-                            ),
+                          Row(
+                            children: [
+
+                              Container(
+                                width: 80,
+                                height: 80,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(12),
+                                  color: Colors.grey.shade300,
+                                ),
+                              ),
+
+                              const SizedBox(width: 12),
+
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+
+                                    Text(
+                                      selected!.title,
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.bold),
+                                    ),
+
+                                    const SizedBox(height: 4),
+
+                                    Text(
+                                      "${selected!.people} người cần hỗ trợ",
+                                      style: const TextStyle(color: Colors.grey),
+                                    ),
+
+                                    Text(
+                                      selected!.subtitle,
+                                      style: const TextStyle(color: Colors.grey),
+                                    ),
+
+                                    Text(
+                                      "Mức độ: ${selected!.level}",
+                                      style: const TextStyle(color: Colors.grey),
+                                    ),
+
+                                    Text(
+                                      "Thời gian: ${selected!.time.toDate()}",
+                                      style: const TextStyle(color: Colors.grey),
+                                    ),
+
+                                    Text(
+                                      "Trạng thái: ${selected!.status.name}",
+                                      style: const TextStyle(color: Colors.blue),
+                                    ),
+                                  ],
+                                ),
+                              ),
+
+                              Column(
+                                children: [
+                                  DropdownButton<ReportStatus>(
+                                    value: selected!.status,
+                                    onChanged: (newStatus) async {
+                                      if (newStatus != null) {
+                                        await FirebaseService.updateReportStatus(selected!.id, newStatus);
+                                        setState(() {
+                                          selected = selected!.copyWith(status: newStatus);
+                                        });
+                                      }
+                                    },
+                                    items: ReportStatus.values.map((status) {
+                                      return DropdownMenuItem(
+                                        value: status,
+                                        child: Text(status.name),
+                                      );
+                                    }).toList(),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete, color: Colors.red),
+                                    onPressed: () async {
+                                      await FirebaseService.deleteReport(selected!.id);
+                                      setState(() {
+                                        selected = null;
+                                      });
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
 
-                          const SizedBox(width: 12),
+                          const SizedBox(height: 12),
 
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.start,
-                              children: [
-
-                                Text(
-                                  selected!["title"],
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.bold),
-                                ),
-
-                                const SizedBox(height: 4),
-
-                                Text(
-                                  "${selected!["people"]} người cần hỗ trợ",
-                                  style: const TextStyle(color: Colors.grey),
-                                ),
-
-                                Text(
-                                  selected!["subtitle"],
-                                  style: const TextStyle(color: Colors.grey),
-                                ),
-                              ],
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xffff6a00),
+                              ),
+                              onPressed: () {},
+                              icon: const Icon(Icons.navigation),
+                              label: const Text("Điều phối cứu hộ"),
                             ),
                           )
                         ],
                       ),
-
-                      const SizedBox(height: 12),
-
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xffff6a00),
-                          ),
-                          onPressed: () {},
-                          icon: const Icon(Icons.navigation),
-                          label: const Text("Điều phối cứu hộ"),
-                        ),
-                      )
-                    ],
+                    ),
                   ),
                 ),
-              ),
-            ),
 
-          /// LIST BOTTOM
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: Card(
-              margin: EdgeInsets.zero,
-              shape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      "Danh sách cứu hộ khẩn cấp",
-                      style: TextStyle(fontWeight: FontWeight.bold),
+              /// LIST BOTTOM
+              DraggableScrollableSheet(
+                initialChildSize: 0.3,
+                minChildSize: 0.1,
+                maxChildSize: 0.8,
+                builder: (context, scrollController) {
+                  return Card(
+                    margin: EdgeInsets.zero,
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
                     ),
-                    const SizedBox(height: 10),
-                    ...demoReports.map((r) {
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: () => moveTo(r),
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Row(
-                              children: [
-                                CircleAvatar(
-                                  backgroundColor: const Color.fromRGBO(255, 106, 0, 0.2),
-                                  child: const Icon(Icons.home, color: Color(0xffff6a00)),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(r["title"], style: const TextStyle(fontWeight: FontWeight.bold)),
-                                      const Text("Phát tín hiệu 5 phút trước", style: TextStyle(color: Colors.grey)),
-                                    ],
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            "Danh sách cứu hộ khẩn cấp",
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 10),
+                          Expanded(
+                            child: ListView(
+                              controller: scrollController,
+                              children: reports.map((r) {
+                                return Card(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(12),
+                                    onTap: () => moveTo(r),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(12),
+                                      child: Row(
+                                        children: [
+                                          CircleAvatar(
+                                            backgroundColor: const Color.fromRGBO(255, 106, 0, 0.2),
+                                            child: const Icon(Icons.home, color: Color(0xffff6a00)),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(r.title, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                                Text("Cập nhật lúc ${r.time.toDate()}", style: const TextStyle(color: Colors.grey)),
+                                                Text("Trạng thái: ${r.status.name}", style: const TextStyle(color: Colors.blue)),
+                                              ],
+                                            ),
+                                          ),
+                                          PopupMenuButton<String>(
+                                            onSelected: (value) async {
+                                              if (value == 'delete') {
+                                                await FirebaseService.deleteReport(r.id);
+                                              } else {
+                                                final status = ReportStatus.values.firstWhere((e) => e.name == value);
+                                                await FirebaseService.updateReportStatus(r.id, status);
+                                              }
+                                            },
+                                            itemBuilder: (context) => [
+                                              const PopupMenuItem(value: 'pending', child: Text('Đang chờ')),
+                                              const PopupMenuItem(value: 'inProgress', child: Text('Đang thực hiện')),
+                                              const PopupMenuItem(value: 'completed', child: Text('Đã hoàn thành')),
+                                              const PopupMenuItem(value: 'cancelled', child: Text('Đã hủy')),
+                                              const PopupMenuDivider(),
+                                              const PopupMenuItem(value: 'delete', child: Text('Xóa')),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                   ),
-                                ),
-                                const Icon(Icons.chevron_right),
-                              ],
+                                );
+                              }).toList(),
                             ),
                           ),
-                        ),
-                      );
-                    }),
-                  ],
-                ),
-              ),
-            ),
-          )
-        ],
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              )
+            ],
+          );
+        },
       ),
 
       /// SOS BUTTON

@@ -1,32 +1,18 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/foundation.dart';
 import '../models/emergency_report.dart';
 import '../models/rescuer.dart';
+import '../firebase_options.dart';
 
 class FirebaseService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static final CollectionReference _reportsRef = _firestore.collection('reports');
   static final CollectionReference _rescuersRef = _firestore.collection('rescuers');
 
-  static const FirebaseOptions _webFirebaseOptions = FirebaseOptions(
-    apiKey: 'YOUR_API_KEY',
-    authDomain: 'YOUR_AUTH_DOMAIN',
-    projectId: 'YOUR_PROJECT_ID',
-    storageBucket: 'YOUR_STORAGE_BUCKET',
-    messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
-    appId: 'YOUR_APP_ID',
-    measurementId: 'YOUR_MEASUREMENT_ID',
-  );
-
   static Future<void> init() async {
     if (Firebase.apps.isNotEmpty) return;
 
-    if (kIsWeb) {
-      await Firebase.initializeApp(options: _webFirebaseOptions);
-    } else {
-      await Firebase.initializeApp();
-    }
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   }
 
   static Future<void> addReport(EmergencyReport report) async {
@@ -55,6 +41,14 @@ class FirebaseService {
     return _rescuersRef.where('isAvailable', isEqualTo: true).snapshots().map(
           (snapshot) => snapshot.docs.map((doc) => Rescuer.fromFirestore(doc)).toList(),
         );
+  }
+
+  static Future<void> updateReportStatus(String id, ReportStatus status) async {
+    await _reportsRef.doc(id).update({'status': status.name});
+  }
+
+  static Future<void> deleteReport(String id) async {
+    await _reportsRef.doc(id).delete();
   }
 
   static Future<List<Rescuer>> getNearbyRescuers(double lat, double lng, double radiusKm) async {

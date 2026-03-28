@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/firebase_service.dart';
+import '../models/emergency_report.dart';
 
 class ReportScreen extends StatefulWidget {
   static const String routeName = '/report';
@@ -10,6 +13,10 @@ class ReportScreen extends StatefulWidget {
 
 class _ReportScreenState extends State<ReportScreen> {
   final _controller = TextEditingController();
+  String _selectedDisaster = "Ngập lụt";
+  String _location = "123 Đường Lê Lợi, Quận 1, TP.HCM";
+  double _lat = 10.762622;
+  double _lng = 106.660172;
 
   @override
   void dispose() {
@@ -154,10 +161,24 @@ class _ReportScreenState extends State<ReportScreen> {
                     borderRadius: BorderRadius.circular(14),
                   ),
                 ),
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Đã gửi báo cáo")),
+                onPressed: () async {
+                  final report = EmergencyReport(
+                    id: '', // Will be set by Firestore
+                    title: _location,
+                    subtitle: _selectedDisaster,
+                    people: 1, // Assume 1 for now
+                    lat: _lat,
+                    lng: _lng,
+                    level: 'medium',
+                    time: Timestamp.now(),
                   );
+                  await FirebaseService.addReport(report);
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("Đã gửi báo cáo")),
+                    );
+                    Navigator.pop(context);
+                  }
                 },
                 child: const Text(
                   "Gửi báo cáo ngay lập tức",
@@ -176,7 +197,9 @@ class _ReportScreenState extends State<ReportScreen> {
     return Card(
       child: InkWell(
         onTap: () {
-          // Handle selection
+          setState(() {
+            _selectedDisaster = title;
+          });
         },
         borderRadius: BorderRadius.circular(16),
         child: Padding(
@@ -184,9 +207,9 @@ class _ReportScreenState extends State<ReportScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 36, color: Colors.orange),
+              Icon(icon, size: 36, color: _selectedDisaster == title ? Colors.blue : Colors.orange),
               const SizedBox(height: 10),
-              Text(title, textAlign: TextAlign.center),
+              Text(title, textAlign: TextAlign.center, style: TextStyle(color: _selectedDisaster == title ? Colors.blue : Colors.black)),
             ],
           ),
         ),

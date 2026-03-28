@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../models/emergency_report.dart';
 import '../models/rescuer.dart';
 import '../services/firebase_service.dart';
 
@@ -83,6 +85,19 @@ class _SosScreenState extends State<SosScreen> {
       _sosSent = true;
       _isLoading = false;
     });
+
+    // Save SOS to Firebase
+    final sosReport = EmergencyReport(
+      id: '',
+      title: 'SOS - Cần cứu hộ khẩn cấp',
+      subtitle: 'SOS từ vị trí hiện tại',
+      people: members,
+      lat: _currentPosition!.latitude,
+      lng: _currentPosition!.longitude,
+      level: 'high',
+      time: Timestamp.now(),
+    );
+    await FirebaseService.addReport(sosReport);
 
     // Simulate sending SOS signal
     if (mounted) {
