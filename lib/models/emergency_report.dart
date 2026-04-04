@@ -17,6 +17,7 @@ class EmergencyReport {
   final String level;
   final Timestamp time;
   final ReportStatus status;
+  final List<String> assignedRescuers;
 
   EmergencyReport({
     required this.id,
@@ -28,6 +29,7 @@ class EmergencyReport {
     required this.level,
     required this.time,
     this.status = ReportStatus.pending,
+    this.assignedRescuers = const [],
   });
 
   factory EmergencyReport.fromFirestore(DocumentSnapshot doc) {
@@ -45,6 +47,7 @@ class EmergencyReport {
         (e) => e.name == data['status'],
         orElse: () => ReportStatus.pending,
       ),
+      assignedRescuers: List<String>.from(data['assignedRescuers'] ?? []),
     );
   }
 
@@ -58,6 +61,7 @@ class EmergencyReport {
       'level': level,
       'time': time,
       'status': status.name,
+      'assignedRescuers': assignedRescuers,
     };
   }
 
@@ -71,6 +75,7 @@ class EmergencyReport {
     String? level,
     Timestamp? time,
     ReportStatus? status,
+    List<String>? assignedRescuers,
   }) {
     return EmergencyReport(
       id: id ?? this.id,
@@ -82,6 +87,7 @@ class EmergencyReport {
       level: level ?? this.level,
       time: time ?? this.time,
       status: status ?? this.status,
+      assignedRescuers: assignedRescuers ?? this.assignedRescuers,
     );
   }
 }

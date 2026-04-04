@@ -4,12 +4,13 @@ import 'package:latlong2/latlong.dart';
 
 import 'report_screen.dart';
 import 'sos.dart';
+import 'rescuer_screen.dart';
 import '../models/emergency_report.dart';
 import '../models/rescuer.dart';
 import '../services/firebase_service.dart';
 
 class HomeScreen extends StatefulWidget {
-  static const String routeName = '/';
+  static const String routeName = '/home';
 
   const HomeScreen({super.key});
 
@@ -144,16 +145,26 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: const Color(0xffdc2626),
         title: const Row(
           children: [
-            Icon(Icons.warning, color: Colors.white),
+            Icon(Icons.home, color: Colors.white),
             SizedBox(width: 8),
-            Text("SOS"),
+            Expanded(
+              child: Text("SOS - Admin"),
+            ),
           ],
         ),
-        actions: const [
-          Icon(Icons.notifications),
-          SizedBox(width: 10),
-          Icon(Icons.search),
-          SizedBox(width: 10),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.switch_account, color: Colors.white),
+            onPressed: () {
+              Navigator.pushReplacementNamed(context, RescuerScreen.routeName);
+            },
+            tooltip: 'Chuyển sang chế độ cứu hộ',
+          ),
+          const SizedBox(width: 10),
+          const Icon(Icons.notifications),
+          const SizedBox(width: 10),
+          const Icon(Icons.search),
+          const SizedBox(width: 10),
         ],
       ),
 
@@ -181,8 +192,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
                   TileLayer(
                     urlTemplate:
-                        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-                    subdomains: const ['a', 'b', 'c'],
+                        "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                    userAgentPackageName: 'appmobilesos',
                   ),
 
                   MarkerLayer(
@@ -345,7 +356,19 @@ class _HomeScreenState extends State<HomeScreen> {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xffff6a00),
                               ),
-                              onPressed: () {},
+                              onPressed: () async {
+                                if (selected != null) {
+                                  // Cập nhật status thành inProgress
+                                  await FirebaseService.updateReportStatus(selected!.id, ReportStatus.inProgress);
+                                  setState(() {
+                                    selected = selected!.copyWith(status: ReportStatus.inProgress);
+                                  });
+                                  // Simulate gửi notification đến rescuers
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Đã gửi thông báo đến đội cứu hộ')),
+                                  );
+                                }
+                              },
                               icon: const Icon(Icons.navigation),
                               label: const Text("Điều phối cứu hộ"),
                             ),
@@ -443,17 +466,23 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
 
       /// SOS BUTTON
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: const Color(0xffdc2626),
-        onPressed: showSOS,
-        child: const Icon(Icons.emergency),
-      ),
+      // floatingActionButton: FloatingActionButton(
+      //   backgroundColor: const Color(0xffdc2626),
+      //   onPressed: showSOS,
+      //   child: const Icon(Icons.emergency),
+      // ),
 
-      floatingActionButtonLocation:
-          FloatingActionButtonLocation.centerDocked,
+      // floatingActionButtonLocation:
+      //     FloatingActionButtonLocation.centerDocked,
 
       /// BOTTOM NAV
       bottomNavigationBar: BottomNavigationBar(
+        selectedItemColor: const Color(0xffdc2626),
+        unselectedItemColor: Colors.grey,
+        selectedLabelStyle: const TextStyle(color: Color(0xffdc2626), fontWeight: FontWeight.bold),
+        unselectedLabelStyle: const TextStyle(color: Colors.grey),
+        showSelectedLabels: true,
+        showUnselectedLabels: true,
         currentIndex: _currentIndex,
         onTap: (index) {
           setState(() {
@@ -464,17 +493,25 @@ class _HomeScreenState extends State<HomeScreen> {
             Navigator.pushNamed(context, ReportScreen.routeName);
           } else if (index == 3) {
             showRescuers();
+          } else if (index == 4) {
+            Navigator.pushNamed(context, RescuerScreen.routeName);
+          } else if (index == 5) {
+            showSOS();
           }
         },
-        items: [
+        items: const [
           BottomNavigationBarItem(
               icon: Icon(Icons.map), label: "Bản đồ"),
           BottomNavigationBarItem(
               icon: Icon(Icons.layers), label: "Lớp phủ"),
           BottomNavigationBarItem(
-              icon: Icon(Icons.description), label: "Báo cáo"),
+              icon: Icon(Icons.add_circle), label: "Báo cáo"),
           BottomNavigationBarItem(
               icon: Icon(Icons.group), label: "Đội cứu trợ"),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.local_hospital), label: "Chế độ cứu hộ"),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.emergency), label: "Cầu cứu"),
         ],
       ),
     );

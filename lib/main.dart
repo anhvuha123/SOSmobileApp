@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/home_screen.dart';
 import 'screens/report_screen.dart';
+import 'screens/login_screen.dart';
 import 'screens/sos.dart';
+import 'screens/rescuer_screen.dart';
 import 'services/firebase_service.dart';
 
 Future<void> main() async {
@@ -10,11 +13,41 @@ Future<void> main() async {
   runApp(const AppMobileSOS());
 }
 
-class AppMobileSOS extends StatelessWidget {
+class AppMobileSOS extends StatefulWidget {
   const AppMobileSOS({super.key});
 
   @override
+  State<AppMobileSOS> createState() => _AppMobileSOSState();
+}
+
+class _AppMobileSOSState extends State<AppMobileSOS> {
+  String? _initialRoute;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAuthStatus();
+  }
+
+  Future<void> _checkAuthStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('auth_token');
+    setState(() {
+      _initialRoute = (token != null && token.isNotEmpty) ? '/report' : '/login';
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_initialRoute == null) {
+      return const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          body: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Emergency Reporting',
@@ -39,11 +72,13 @@ class AppMobileSOS extends StatelessWidget {
           ),
         ),
       ),
-      initialRoute: HomeScreen.routeName,
+      home: _initialRoute == '/report' ? const ReportScreen() : const LoginScreen(),
       routes: {
+        '/login': (context) => const LoginScreen(),
+        '/report': (context) => const ReportScreen(),
         HomeScreen.routeName: (context) => const HomeScreen(),
-        ReportScreen.routeName: (context) => const ReportScreen(),
         SosScreen.routeName: (context) => const SosScreen(),
+        RescuerScreen.routeName: (context) => const RescuerScreen(),
       },
     );
   }

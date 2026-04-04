@@ -29,6 +29,35 @@ class FirebaseService {
     await _rescuersRef.doc(rescuer.id).set(rescuer.toMap());
   }
 
+  static Future<void> assignTaskToRescuer(String rescuerId, String reportId) async {
+    await _rescuersRef.doc(rescuerId).update({
+      'currentTaskId': reportId,
+      'status': RescuerStatus.onTask.name,
+      'isAvailable': false,
+    });
+  }
+
+  static Future<void> rescuerAcceptTask(String rescuerId, String reportId) async {
+    // Add rescuer to assigned list
+    final reportRef = _reportsRef.doc(reportId);
+    final reportDoc = await reportRef.get();
+    final data = reportDoc.data() as Map<String, dynamic>;
+    final assigned = List<String>.from(data['assignedRescuers'] ?? []);
+    if (!assigned.contains(rescuerId)) {
+      assigned.add(rescuerId);
+      await reportRef.update({'assignedRescuers': assigned});
+    }
+    await assignTaskToRescuer(rescuerId, reportId);
+  }
+
+  static Future<void> rescuerRejectTask(String rescuerId) async {
+    await _rescuersRef.doc(rescuerId).update({
+      'currentTaskId': null,
+      'status': RescuerStatus.available.name,
+      'isAvailable': true,
+    });
+  }
+
   static Future<void> updateRescuerLocation(String id, double lat, double lng) async {
     await _rescuersRef.doc(id).update({
       'lat': lat,
