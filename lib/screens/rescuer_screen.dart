@@ -1,11 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../models/emergency_report.dart';
-import '../services/firebase_service.dart';
+import '../models/web_rescue.dart';
+import '../services/map_tiles.dart';
+import '../services/web_rescue_service.dart';
+import 'home_screen.dart';
 
 class RescuerScreen extends StatefulWidget {
   static const String routeName = '/rescuer';
@@ -18,323 +22,462 @@ class RescuerScreen extends StatefulWidget {
 
 class _RescuerScreenState extends State<RescuerScreen> {
   final MapController _mapController = MapController();
-  LatLng center = const LatLng(10.762622, 106.660172);
-  double zoom = 13;
+  final WebRescueService _service = const WebRescueService();
 
-  String? currentRescuerId; // Giả sử có ID của rescuer hiện tại
-  EmergencyReport? currentTask;
-  LatLng? currentLocation;
+  Timer? _polling;
+  StreamSubscription<Position>? _locationSub;
+
+  List<WebRescue> _rescues = const [];
+  WebRescue? _currentTask;
+  LatLng? _currentLocation;
+  bool _loading = true;
+  String? _error;
+  bool _satelliteMode = false;
+
+  LatLng _center = const LatLng(10.762622, 106.660172);
+  double _zoom = 13;
 
   @override
   void initState() {
     super.initState();
-    // Giả sử rescuer ID là 'rescuer1', trong thực tế lấy từ auth
-    currentRescuerId = 'rescuer1';
-    _startLocationUpdates();
+    _refresh();
+    _startLocationTracking();
+    _polling = Timer.periodic(const Duration(seconds: 6), (_) => _refresh(silent: true));
   }
 
-  void _startLocationUpdates() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return;
+  @override
+  void dispose() {
+    _polling?.cancel();
+    _locationSub?.cancel();
+    super.dispose();
+  }
 
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) return;
+  Future<void> _refresh({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
     }
 
-    Geolocator.getPositionStream().listen((Position position) {
-      if (mounted) {
-        setState(() {
-          currentLocation = LatLng(position.latitude, position.longitude);
-        });
-      }
-      if (currentRescuerId != null) {
-        FirebaseService.updateRescuerLocation(
-          currentRescuerId!,
-          position.latitude,
-          position.longitude,
-        );
+    try {
+      final rescues = await _service.getRescues();
+      if (!mounted) return;
+      setState(() {
+        _rescues = rescues.where((r) => r.status == 'new' || r.status == 'rescuing').toList();
+        if (_currentTask != null) {
+          _currentTask = rescues.where((r) => r.id == _currentTask!.id).cast<WebRescue?>().firstWhere((_) => true, orElse: () => null);
+        }
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = e.toString();
+      });
+    }
+  }
+
+  Future<void> _startLocationTracking() async {
+    final enabled = await Geolocator.isLocationServiceEnabled();
+    if (!enabled) return;
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+      return;
+    }
+
+    _locationSub = Geolocator.getPositionStream().listen((position) async {
+      final point = LatLng(position.latitude, position.longitude);
+      if (!mounted) return;
+
+      setState(() {
+        _currentLocation = point;
+        _center = point;
+      });
+
+      try {
+        await _service.updateRescuerLocation(position.latitude, position.longitude);
+      } catch (_) {
+        // Keep UI responsive even when location update endpoint is temporarily unavailable.
       }
     });
   }
 
-  void _acceptTask(EmergencyReport report) async {
-    if (currentRescuerId != null) {
-      await FirebaseService.rescuerAcceptTask(currentRescuerId!, report.id);
-      setState(() {
-        currentTask = report;
-      });
-      // Move to task location
-      _mapController.move(LatLng(report.lat, report.lng), 15);
-
-      // Hiển thị thông báo thành công
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Đã chấp nhận nhiệm vụ: ${report.title}'),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-
-      // Tự động mở Google Maps với chỉ đường sau 2 giây
-      Future.delayed(const Duration(seconds: 2), () {
-        _openGoogleMapsDirections(report);
-      });
+  String _statusLabel(String status) {
+    switch (status) {
+      case 'new':
+        return 'Mới';
+      case 'rescuing':
+        return 'Đang cứu hộ';
+      case 'done':
+        return 'Hoàn thành';
+      case 'cancel':
+      case 'canceled':
+      case 'cancelled':
+        return 'Đã hủy';
+      default:
+        return status;
     }
   }
 
-  void _rejectTask() async {
-    if (currentRescuerId != null) {
-      await FirebaseService.rescuerRejectTask(currentRescuerId!);
-      setState(() {
-        currentTask = null;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Đã từ chối nhiệm vụ')),
-      );
-    }
-  }
-
-  void _openGoogleMapsDirections(EmergencyReport report) async {
-    if (currentLocation != null) {
-      final origin = '${currentLocation!.latitude},${currentLocation!.longitude}';
-      final destination = '${report.lat},${report.lng}';
-      final url = 'https://www.google.com/maps/dir/?api=1&origin=$origin&destination=$destination&travelmode=driving';
-
-      try {
-        if (await canLaunchUrl(Uri.parse(url))) {
-          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-        } else {
-          // Thử với URL đơn giản hơn nếu URL phức tạp không hoạt động
-          final simpleUrl = 'https://www.google.com/maps/search/?api=1&query=${report.lat},${report.lng}';
-          if (await canLaunchUrl(Uri.parse(simpleUrl))) {
-            await launchUrl(Uri.parse(simpleUrl), mode: LaunchMode.externalApplication);
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Không thể mở ứng dụng bản đồ. Vui lòng cài đặt Google Maps hoặc ứng dụng bản đồ khác.')),
-            );
-          }
-        }
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Lỗi khi mở bản đồ: $e')),
-        );
-      }
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Chưa có vị trí hiện tại. Đang lấy vị trí...')),
-      );
-      // Thử lấy vị trí hiện tại một lần nữa
-      _getCurrentLocationAndOpenMaps(report);
-    }
-  }
-
-  void _getCurrentLocationAndOpenMaps(EmergencyReport report) async {
+  Future<void> _acceptTask(WebRescue rescue) async {
     try {
-      Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 10),
-      );
+      await _service.updateRescueStatus(rescue.id, 'rescuing');
       setState(() {
-        currentLocation = LatLng(position.latitude, position.longitude);
+        _currentTask = rescue.copyWith(status: 'rescuing');
       });
-      // Thử mở maps lại với vị trí mới
-      _openGoogleMapsDirections(report);
-    } catch (e) {
+      _mapController.move(LatLng(rescue.lat, rescue.lng), 15);
+      await _refresh(silent: true);
+
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Không thể lấy vị trí hiện tại. Vui lòng bật GPS và thử lại.')),
+        SnackBar(content: Text('Đã nhận nhiệm vụ #${rescue.id}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Không thể nhận nhiệm vụ: $e')),
       );
     }
+  }
+
+  Future<void> _finishTask() async {
+    final task = _currentTask;
+    if (task == null) return;
+
+    try {
+      await _service.updateRescueStatus(task.id, 'done');
+      setState(() {
+        _currentTask = null;
+      });
+      await _refresh(silent: true);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã hoàn thành nhiệm vụ')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Không thể hoàn thành nhiệm vụ: $e')));
+    }
+  }
+
+  Future<void> _openDirections(WebRescue rescue) async {
+    if (_currentLocation == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đang lấy vị trí hiện tại...')));
+      return;
+    }
+
+    final origin = '${_currentLocation!.latitude},${_currentLocation!.longitude}';
+    final destination = '${rescue.lat},${rescue.lng}';
+    final url = 'https://www.google.com/maps/dir/?api=1&origin=$origin&destination=$destination&travelmode=driving';
+
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      return;
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Không mở được chỉ đường')));
+  }
+
+  Widget _chip(IconData icon, String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: color),
+          const SizedBox(width: 6),
+          Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: color)),
+        ],
+      ),
+    );
+  }
+
+  Widget _controlButton(IconData icon, VoidCallback onPressed) {
+    return Material(
+      color: Colors.white,
+      elevation: 8,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(16),
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Icon(icon, size: 20, color: const Color(0xff0f172a)),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final pendingCount = _rescues.where((r) => r.status == 'new').length;
+
     return Scaffold(
+      backgroundColor: const Color(0xffeef2ff),
       appBar: AppBar(
-        title: const Text('Đội cứu hộ'),
-        backgroundColor: Colors.blue,
+        backgroundColor: const Color(0xff0f172a),
+        title: const Row(
+          children: [
+            Icon(Icons.shield, color: Colors.white),
+            SizedBox(width: 10),
+            Text('Bảng điều phối cứu hộ', style: TextStyle(fontWeight: FontWeight.w800)),
+          ],
+        ),
         actions: [
           IconButton(
+            onPressed: () => Navigator.pushReplacementNamed(context, HomeScreen.routeName),
             icon: const Icon(Icons.switch_account, color: Colors.white),
-            onPressed: () {
-              Navigator.pushReplacementNamed(context, '/');
-            },
-            tooltip: 'Chuyển sang chế độ Admin',
+          ),
+          IconButton(
+            onPressed: _refresh,
+            icon: const Icon(Icons.refresh, color: Colors.white),
           ),
         ],
       ),
-      body: StreamBuilder<List<EmergencyReport>>(
-        stream: FirebaseService.streamReports(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(child: Text('Lỗi: ${snapshot.error}'));
-          }
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final reports = snapshot.data!.where((r) =>
-            r.status == ReportStatus.pending || r.status == ReportStatus.inProgress
-          ).toList();
-
-          return Stack(
-            children: [
-              FlutterMap(
-                mapController: _mapController,
-                options: MapOptions(
-                  initialCenter: center,
-                  initialZoom: zoom,
-                ),
-                children: [
-                  TileLayer(
-                    urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-                    userAgentPackageName: 'appmobilesos',
-                  ),
-                  MarkerLayer(
-                    markers: [
-                      // Markers for tasks
-                      ...reports.map((r) {
-                        return Marker(
-                          point: LatLng(r.lat, r.lng),
-                          width: 40,
-                          height: 40,
-                          child: const Icon(
-                            Icons.warning,
-                            color: Colors.red,
-                            size: 35,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 220),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(28),
+                child: FlutterMap(
+                  mapController: _mapController,
+                  options: MapOptions(initialCenter: _center, initialZoom: _zoom),
+                  children: [
+                    TileLayer(
+                      urlTemplate: mapTileUrl(_satelliteMode ? MapBaseLayer.satellite : MapBaseLayer.standard),
+                      userAgentPackageName: 'appmobilesos',
+                    ),
+                    MarkerLayer(
+                      markers: [
+                        ..._rescues
+                            .where((r) => r.lat != 0 && r.lng != 0)
+                            .map(
+                              (r) => Marker(
+                                point: LatLng(r.lat, r.lng),
+                                width: 44,
+                                height: 44,
+                                child: const Icon(Icons.location_on_rounded, color: Color(0xffdc2626), size: 38),
+                              ),
+                            ),
+                        if (_currentLocation != null)
+                          Marker(
+                            point: _currentLocation!,
+                            width: 44,
+                            height: 44,
+                            child: const Icon(Icons.person_pin_circle, color: Color(0xff2563eb), size: 38),
                           ),
-                        );
-                      }).toList(),
-                      // Marker for current rescuer location
-                      if (currentLocation != null)
-                        Marker(
-                          point: currentLocation!,
-                          width: 40,
-                          height: 40,
-                          child: const Icon(
-                            Icons.person_pin_circle,
-                            color: Colors.blue,
-                            size: 35,
-                          ),
-                        ),
-                    ],
-                  ),
-                  // Route polyline
-                  if (currentTask != null && currentLocation != null)
-                    PolylineLayer(
-                      polylines: [
-                        Polyline(
-                          points: [
-                            currentLocation!,
-                            LatLng(currentTask!.lat, currentTask!.lng),
-                          ],
-                          color: Colors.blue,
-                          strokeWidth: 4.0,
-                        ),
                       ],
                     ),
-                ],
-              ),
-
-              // Task details if accepted
-              if (currentTask != null)
-                Positioned(
-                  bottom: 210,
-                  left: 16,
-                  right: 16,
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Nhiệm vụ: ${currentTask!.title}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                          Text('Mô tả: ${currentTask!.subtitle}'),
-                          Text('Người cần hỗ trợ: ${currentTask!.people}'),
-                          Text('Số người cứu hộ đã nhận: ${currentTask!.assignedRescuers.length}'),
-                          Text('Yêu cầu chuẩn bị: ${currentTask!.level}'),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: ElevatedButton.icon(
-                                  onPressed: () => _openGoogleMapsDirections(currentTask!),
-                                  icon: const Icon(Icons.directions),
-                                  label: const Text('Chỉ dẫn'),
-                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: ElevatedButton(
-                                  onPressed: () async {
-                                    await FirebaseService.updateReportStatus(currentTask!.id, ReportStatus.completed);
-                                    _rejectTask();
-                                  },
-                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                                  child: const Text('Hoàn thành'),
-                                ),
-                              ),
-                            ],
+                    if (_currentTask != null && _currentLocation != null)
+                      PolylineLayer(
+                        polylines: [
+                          Polyline(
+                            points: [_currentLocation!, LatLng(_currentTask!.lat, _currentTask!.lng)],
+                            color: const Color(0xff2563eb),
+                            strokeWidth: 4.0,
                           ),
                         ],
                       ),
-                    ),
-                  ),
+                  ],
                 ),
-
-              // Available tasks
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: Container(
-                  height: 200,
-                  color: Colors.white,
+              ),
+            ),
+          ),
+          Positioned(
+            left: 16,
+            top: 16,
+            right: 124,
+            child: Card(
+              elevation: 12,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Trạng thái tuyến cứu hộ', style: TextStyle(fontSize: 12, color: Colors.black54, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 6),
+                    Text('$pendingCount nhiệm vụ chờ xử lý', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _chip(Icons.notifications_active_rounded, '${_rescues.length} nhiệm vụ mở', const Color(0xffdc2626)),
+                        _chip(Icons.navigation_rounded, _currentTask == null ? 'Chưa nhận nhiệm vụ' : 'Đang nhận nhiệm vụ', const Color(0xff2563eb)),
+                        _chip(Icons.map_rounded, hasGoongApiKey ? 'Goong map' : 'OSM fallback', const Color(0xff0f172a)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 16,
+            top: 16,
+            child: Column(
+              children: [
+                _controlButton(Icons.add, () {
+                  setState(() {
+                    _zoom = (_zoom + 1).clamp(5, 18).toDouble();
+                    _mapController.move(_center, _zoom);
+                  });
+                }),
+                const SizedBox(height: 8),
+                _controlButton(Icons.remove, () {
+                  setState(() {
+                    _zoom = (_zoom - 1).clamp(5, 18).toDouble();
+                    _mapController.move(_center, _zoom);
+                  });
+                }),
+                const SizedBox(height: 8),
+                _controlButton(_satelliteMode ? Icons.layers : Icons.satellite_alt, () {
+                  setState(() {
+                    _satelliteMode = !_satelliteMode;
+                  });
+                }),
+                const SizedBox(height: 8),
+                _controlButton(Icons.my_location, () {
+                  if (_currentLocation != null) {
+                    _mapController.move(_currentLocation!, 15);
+                  }
+                }),
+              ],
+            ),
+          ),
+          if (_currentTask != null)
+            Positioned(
+              bottom: 210,
+              left: 16,
+              right: 16,
+              child: Card(
+                elevation: 12,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Padding(
-                        padding: EdgeInsets.all(8.0),
-                        child: Text('Nhiệm vụ khả dụng', style: TextStyle(fontWeight: FontWeight.bold)),
-                      ),
-                      Expanded(
-                        child: ListView(
-                          children: reports.map((r) {
-                            return ListTile(
-                              title: Text(r.title),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('Trạng thái: ${r.status.name}'),
-                                  Text('Đã có ${r.assignedRescuers.length} người nhận'),
-                                  Text('Yêu cầu: ${r.level}'),
-                                ],
-                              ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  ElevatedButton(
-                                    onPressed: () => _acceptTask(r),
-                                    child: const Text('Nhận'),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  ElevatedButton(
-                                    onPressed: _rejectTask,
-                                    style: ElevatedButton.styleFrom(backgroundColor: Colors.grey),
-                                    child: const Text('Từ chối'),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }).toList(),
-                        ),
+                      const Text('Nhiệm vụ hiện tại', style: TextStyle(fontSize: 12, color: Colors.black54, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 6),
+                      Text(_currentTask!.address, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                      Text('Số người cần hỗ trợ: ${_currentTask!.victims}'),
+                      Text('Trạng thái: ${_statusLabel(_currentTask!.status)}'),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () => _openDirections(_currentTask!),
+                              icon: const Icon(Icons.directions),
+                              label: const Text('Chỉ đường'),
+                              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xff2563eb)),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: _finishTask,
+                              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xff16a34a)),
+                              child: const Text('Hoàn thành'),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
               ),
-            ],
-          );
-        },
+            ),
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              height: 200,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                boxShadow: [
+                  BoxShadow(color: Color(0x22000000), blurRadius: 20, offset: Offset(0, -4)),
+                ],
+              ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 44,
+                    height: 5,
+                    decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(99)),
+                  ),
+                  const SizedBox(height: 10),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('Nhiệm vụ khả dụng', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                    ),
+                  ),
+                  Expanded(
+                    child: _loading
+                        ? const Center(child: CircularProgressIndicator())
+                        : _error != null
+                            ? Center(child: Text(_error!))
+                            : ListView.builder(
+                                itemCount: _rescues.length,
+                                itemBuilder: (context, index) {
+                                  final rescue = _rescues[index];
+                                  return Card(
+                                    margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(18),
+                                      side: BorderSide(color: Colors.grey.shade200),
+                                    ),
+                                    child: ListTile(
+                                      title: Text(rescue.address, style: const TextStyle(fontWeight: FontWeight.w800)),
+                                      subtitle: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text('Trạng thái: ${_statusLabel(rescue.status)}'),
+                                          Text('Nạn nhân: ${rescue.victims}'),
+                                          Text('Loại SOS: ${rescue.sosType}'),
+                                        ],
+                                      ),
+                                      trailing: ElevatedButton(
+                                        onPressed: () => _acceptTask(rescue),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xffdc2626),
+                                          foregroundColor: Colors.white,
+                                        ),
+                                        child: const Text('Nhận'),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

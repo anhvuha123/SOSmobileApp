@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import '../models/emergency_report.dart';
-import '../models/rescuer.dart';
-import '../services/firebase_service.dart';
+
+import '../services/web_rescue_service.dart';
 
 class SosScreen extends StatefulWidget {
   static const String routeName = '/sos';
+
   const SosScreen({super.key});
 
   @override
@@ -14,252 +13,326 @@ class SosScreen extends StatefulWidget {
 }
 
 class _SosScreenState extends State<SosScreen> {
-  bool _isLoading = false;
-  bool _sosSent = false;
-  List<Rescuer> _nearbyRescuers = [];
-  int _requestedMembers = 0;
-  Position? _currentPosition;
+  final WebRescueService _service = const WebRescueService();
+
+  final _nameCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  final _addressCtrl = TextEditingController();
+  final _noteCtrl = TextEditingController();
+  final _sourceUrlCtrl = TextEditingController();
+
+  bool _sending = false;
+  bool _updating = false;
+  Position? _position;
+  int? _latestSosId;
+  int _victims = 1;
+  String _sosType = 'rescue';
 
   @override
   void initState() {
     super.initState();
-    _getCurrentLocation();
+    _loadLocation();
   }
 
-  Future<void> _getCurrentLocation() async {
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _phoneCtrl.dispose();
+    _addressCtrl.dispose();
+    _noteCtrl.dispose();
+    _sourceUrlCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadLocation() async {
     try {
-      Position position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
+      final enabled = await Geolocator.isLocationServiceEnabled();
+      if (!enabled) return;
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        return;
+      }
+
+      final pos = await Geolocator.getCurrentPosition();
+      if (!mounted) return;
+      setState(() {
+        _position = pos;
+      });
+    } catch (_) {
+      // Ignore temporary GPS errors, user can retry.
+    }
+  }
+
+  Future<void> _submitSos() async {
+    if (_position == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Chưa có vị trí GPS, thử lại sau vài giây')));
+      return;
+    }
+
+    if (_nameCtrl.text.trim().isEmpty || _phoneCtrl.text.trim().isEmpty || _addressCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vui lòng nhập đủ họ tên, số điện thoại và địa chỉ')));
+      return;
+    }
+
+    setState(() {
+      _sending = true;
+    });
+
+    try {
+      final createdId = await _service.createSos(
+        name: _nameCtrl.text.trim(),
+        phone: _phoneCtrl.text.trim(),
+        address: _addressCtrl.text.trim(),
+        note: _noteCtrl.text.trim(),
+        victims: _victims,
+        sosType: _sosType,
+        lat: _position!.latitude,
+        lng: _position!.longitude,
+        sourceUrl: _sourceUrlCtrl.text.trim().isEmpty ? null : _sourceUrlCtrl.text.trim(),
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _latestSosId = createdId;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            createdId == null
+                ? 'Đã gửi SOS thành công, hệ thống đang điều phối'
+                : 'Đã gửi SOS #$createdId, bạn có thể cập nhật thêm thông tin bên dưới',
+          ),
         ),
       );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gửi SOS thất bại: $e')));
+    } finally {
       if (mounted) {
         setState(() {
-          _currentPosition = position;
+          _sending = false;
         });
       }
+    }
+  }
+
+  Future<void> _updateLatestSos() async {
+    final id = _latestSosId;
+    if (id == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Chưa có SOS mới để cập nhật')));
+      return;
+    }
+
+    setState(() {
+      _updating = true;
+    });
+
+    try {
+      await _service.updateSosDetails(
+        id: id,
+        address: _addressCtrl.text.trim(),
+        note: _noteCtrl.text.trim(),
+        victims: _victims,
+        sosType: _sosType,
+        sourceUrl: _sourceUrlCtrl.text.trim().isEmpty ? null : _sourceUrlCtrl.text.trim(),
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã cập nhật thêm thông tin cho SOS #$id')));
     } catch (e) {
-      // Handle location error
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Cập nhật SOS thất bại: $e')));
+    } finally {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Không thể lấy vị trí hiện tại')),
-        );
+        setState(() {
+          _updating = false;
+        });
       }
     }
-  }
-
-  Future<void> _sendSOS() async {
-    if (_currentPosition == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vị trí không khả dụng')),
-      );
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    // Ask for number of members needed
-    final int? members = await _showMembersDialog();
-    if (members == null || members <= 0) {
-      setState(() {
-        _isLoading = false;
-      });
-      return;
-    }
-
-    setState(() {
-      _requestedMembers = members;
-    });
-
-    // Find nearby rescuers
-    final nearby = await FirebaseService.getNearbyRescuers(
-      _currentPosition!.latitude,
-      _currentPosition!.longitude,
-      10.0, // 10km radius
-    );
-
-    setState(() {
-      _nearbyRescuers = nearby.take(members).toList();
-      _sosSent = true;
-      _isLoading = false;
-    });
-
-    // Save SOS to Firebase
-    final sosReport = EmergencyReport(
-      id: '',
-      title: 'SOS - Cần cứu hộ khẩn cấp',
-      subtitle: 'SOS từ vị trí hiện tại',
-      people: members,
-      lat: _currentPosition!.latitude,
-      lng: _currentPosition!.longitude,
-      level: 'high',
-      time: Timestamp.now(),
-    );
-    await FirebaseService.addReport(sosReport);
-
-    // Simulate sending SOS signal
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Đã gửi tín hiệu SOS')),
-      );
-    }
-  }
-
-  Future<int?> _showMembersDialog() async {
-    int members = 1;
-    return showDialog<int>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Số lượng thành viên cần thiết'),
-        content: TextField(
-          keyboardType: TextInputType.number,
-          onChanged: (value) {
-            members = int.tryParse(value) ?? 1;
-          },
-          decoration: const InputDecoration(
-            hintText: 'Nhập số lượng',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Hủy'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, members),
-            child: const Text('Xác nhận'),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xffeef2ff),
       appBar: AppBar(
-        title: const Text('Cầu cứu khẩn cấp'),
-        centerTitle: true,
+        backgroundColor: const Color(0xff0f172a),
+        title: const Text('Gửi SOS khẩn cấp'),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Current Location Card
             Card(
+              elevation: 8,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(12),
+                      width: 52,
+                      height: 52,
                       decoration: BoxDecoration(
-                        color: Colors.red.shade100,
-                        borderRadius: BorderRadius.circular(12),
+                        color: const Color(0xfffee2e2),
+                        borderRadius: BorderRadius.circular(14),
                       ),
-                      child: const Icon(Icons.location_on, color: Colors.red),
+                      child: const Icon(Icons.emergency, color: Color(0xffdc2626)),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            "Vị trí hiện tại của bạn",
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.red,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
+                          const Text('Vị trí hiện tại', style: TextStyle(fontWeight: FontWeight.w800)),
                           Text(
-                            _currentPosition != null
-                                ? "${_currentPosition!.latitude.toStringAsFixed(4)}, ${_currentPosition!.longitude.toStringAsFixed(4)}"
-                                : "Đang lấy vị trí...",
-                            style: const TextStyle(fontSize: 13),
+                            _position == null
+                                ? 'Đang lấy GPS...'
+                                : '${_position!.latitude.toStringAsFixed(5)}, ${_position!.longitude.toStringAsFixed(5)}',
+                            style: const TextStyle(color: Colors.black54),
                           ),
                         ],
+                      ),
+                    ),
+                    IconButton(onPressed: _loadLocation, icon: const Icon(Icons.refresh)),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Card(
+              elevation: 8,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Thông tin cần cứu hộ', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _nameCtrl,
+                      decoration: const InputDecoration(labelText: 'Họ và tên', border: OutlineInputBorder()),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _phoneCtrl,
+                      decoration: const InputDecoration(labelText: 'Số điện thoại', border: OutlineInputBorder()),
+                      keyboardType: TextInputType.phone,
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _addressCtrl,
+                      decoration: const InputDecoration(labelText: 'Địa chỉ chi tiết', border: OutlineInputBorder()),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _noteCtrl,
+                      maxLines: 3,
+                      decoration: const InputDecoration(labelText: 'Mô tả tình trạng', border: OutlineInputBorder()),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _sourceUrlCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Nguồn tin/Ảnh hiện trường (URL)',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.url,
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      initialValue: _sosType,
+                      decoration: const InputDecoration(labelText: 'Loại SOS', border: OutlineInputBorder()),
+                      items: const [
+                        DropdownMenuItem(value: 'rescue', child: Text('Cần cứu hộ người')),
+                        DropdownMenuItem(value: 'vehicle', child: Text('Cần cứu hộ xe')),
+                        DropdownMenuItem(value: 'supplies', child: Text('Cần nhu yếu phẩm')),
+                        DropdownMenuItem(value: 'other', child: Text('Yêu cầu khác')),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() {
+                            _sosType = value;
+                          });
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        const Text('Số người cần hỗ trợ:', style: TextStyle(fontWeight: FontWeight.w600)),
+                        const SizedBox(width: 12),
+                        IconButton(
+                          onPressed: () {
+                            if (_victims > 1) {
+                              setState(() {
+                                _victims--;
+                              });
+                            }
+                          },
+                          icon: const Icon(Icons.remove_circle_outline),
+                        ),
+                        Text('$_victims', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+                        IconButton(
+                          onPressed: () {
+                            setState(() {
+                              _victims++;
+                            });
+                          },
+                          icon: const Icon(Icons.add_circle_outline),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _sending ? null : _submitSos,
+                        icon: _sending
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
+                            : const Icon(Icons.send),
+                        label: Text(_sending ? 'Đang gửi...' : 'Gửi SOS ngay'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xffdc2626),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: (_updating || _latestSosId == null) ? null : _updateLatestSos,
+                        icon: _updating
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.edit_note),
+                        label: Text(
+                          _latestSosId == null
+                              ? 'Gửi SOS trước để cập nhật thêm thông tin'
+                              : (_updating ? 'Đang cập nhật...' : 'Cập nhật thêm thông tin SOS mới'),
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 20),
-
-            // SOS Button
-            if (!_sosSent) ...[
-              const Text(
-                "Gửi tín hiệu cầu cứu",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                height: 60,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _sendSOS,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  child: _isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text(
-                          "GỬI SOS NGAY",
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                        ),
-                ),
-              ),
-            ] else ...[
-              // After SOS sent
-              Card(
-                color: Colors.red.shade50,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.warning, color: Colors.red),
-                          SizedBox(width: 8),
-                          Text(
-                            "Đang chờ đội cứu hộ",
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.red,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Text("Số lượng thành viên yêu cầu: $_requestedMembers"),
-                      const SizedBox(height: 8),
-                      Text("Số lượng cứu trợ viên gần nhất: ${_nearbyRescuers.length}"),
-                      if (_nearbyRescuers.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        const Text(
-                          "Cứu trợ viên đang đến:",
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 8),
-                        ..._nearbyRescuers.map((rescuer) => Padding(
-                          padding: const EdgeInsets.only(bottom: 4),
-                          child: Text("• ${rescuer.name}"),
-                        )),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-            ],
           ],
         ),
       ),

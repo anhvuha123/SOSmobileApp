@@ -32,8 +32,19 @@ class _AppMobileSOSState extends State<AppMobileSOS> {
   Future<void> _checkAuthStatus() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token');
+    final role = prefs.getString('auth_role');
+
+    String route = '/login';
+    if (token != null && token.isNotEmpty) {
+      route = switch (role) {
+        'rescuer' => RescuerScreen.routeName,
+        'admin' => HomeScreen.routeName,
+        _ => SosScreen.routeName,
+      };
+    }
+
     setState(() {
-      _initialRoute = (token != null && token.isNotEmpty) ? '/report' : '/login';
+      _initialRoute = route;
     });
   }
 
@@ -42,9 +53,7 @@ class _AppMobileSOSState extends State<AppMobileSOS> {
     if (_initialRoute == null) {
       return const MaterialApp(
         debugShowCheckedModeBanner: false,
-        home: Scaffold(
-          body: Center(child: CircularProgressIndicator()),
-        ),
+        home: Scaffold(body: Center(child: CircularProgressIndicator())),
       );
     }
 
@@ -52,9 +61,15 @@ class _AppMobileSOSState extends State<AppMobileSOS> {
       debugShowCheckedModeBanner: false,
       title: 'Emergency Reporting',
       theme: ThemeData(
-        primarySwatch: Colors.deepOrange,
         useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xfff5f5f5),
+        colorSchemeSeed: const Color(0xffdc2626),
+        scaffoldBackgroundColor: const Color(0xfff6f7fb),
+        appBarTheme: const AppBarTheme(
+          centerTitle: true,
+          elevation: 0,
+          backgroundColor: Color(0xffdc2626),
+          foregroundColor: Colors.white,
+        ),
         cardTheme: const CardThemeData(
           elevation: 4,
           shape: RoundedRectangleBorder(
@@ -63,7 +78,7 @@ class _AppMobileSOSState extends State<AppMobileSOS> {
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.deepOrange,
+            backgroundColor: const Color(0xffdc2626),
             foregroundColor: Colors.white,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14),
@@ -72,7 +87,13 @@ class _AppMobileSOSState extends State<AppMobileSOS> {
           ),
         ),
       ),
-      home: _initialRoute == '/report' ? const ReportScreen() : const LoginScreen(),
+      home: switch (_initialRoute) {
+        '/login' => const LoginScreen(),
+        '/home' => const HomeScreen(),
+        '/rescuer' => const RescuerScreen(),
+        '/sos' => const SosScreen(),
+        _ => const LoginScreen(),
+      },
       routes: {
         '/login': (context) => const LoginScreen(),
         '/report': (context) => const ReportScreen(),
