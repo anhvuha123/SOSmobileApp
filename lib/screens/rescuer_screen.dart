@@ -33,6 +33,7 @@ class _RescuerScreenState extends State<RescuerScreen> {
   bool _loading = true;
   String? _error;
   bool _satelliteMode = false;
+  bool _statusOverviewCollapsed = false;
 
   LatLng _center = const LatLng(10.762622, 106.660172);
   double _zoom = 13;
@@ -310,19 +311,40 @@ class _RescuerScreenState extends State<RescuerScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Trạng thái tuyến cứu hộ', style: TextStyle(fontSize: 12, color: Colors.black54, fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 6),
-                    Text('$pendingCount nhiệm vụ chờ xử lý', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
+                    Row(
                       children: [
-                        _chip(Icons.notifications_active_rounded, '${_rescues.length} nhiệm vụ mở', const Color(0xffdc2626)),
-                        _chip(Icons.navigation_rounded, _currentTask == null ? 'Chưa nhận nhiệm vụ' : 'Đang nhận nhiệm vụ', const Color(0xff2563eb)),
-                        _chip(Icons.map_rounded, hasGoongApiKey ? 'Goong map' : 'OSM fallback', const Color(0xff0f172a)),
+                        const Expanded(
+                          child: Text(
+                            'Trạng thái tuyến cứu hộ',
+                            style: TextStyle(fontSize: 12, color: Colors.black54, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () {
+                            setState(() {
+                              _statusOverviewCollapsed = !_statusOverviewCollapsed;
+                            });
+                          },
+                          icon: Icon(_statusOverviewCollapsed ? Icons.unfold_more : Icons.unfold_less),
+                          tooltip: _statusOverviewCollapsed ? 'Mở rộng' : 'Thu gọn',
+                          visualDensity: VisualDensity.compact,
+                        ),
                       ],
                     ),
+                    if (!_statusOverviewCollapsed) ...[
+                      const SizedBox(height: 6),
+                      Text('$pendingCount nhiệm vụ chờ xử lý', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _chip(Icons.notifications_active_rounded, '${_rescues.length} nhiệm vụ mở', const Color(0xffdc2626)),
+                          _chip(Icons.navigation_rounded, _currentTask == null ? 'Chưa nhận nhiệm vụ' : 'Đang nhận nhiệm vụ', const Color(0xff2563eb)),
+                          _chip(Icons.map_rounded, hasGoongApiKey ? 'Goong map' : 'OSM fallback', const Color(0xff0f172a)),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),

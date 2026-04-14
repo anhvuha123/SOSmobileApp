@@ -30,6 +30,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _loading = true;
   String? _error;
   bool _satelliteMode = false;
+  bool _overviewCollapsed = false;
   int _currentIndex = 0;
 
   LatLng _center = const LatLng(10.762622, 106.660172);
@@ -341,19 +342,40 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Tổng quan cứu hộ', style: TextStyle(fontSize: 12, color: Colors.black54, fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 6),
-                    Text('${active.length} yêu cầu đang mở', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
+                    Row(
                       children: [
-                        _chip(Icons.place_rounded, '${_rescues.length} tổng yêu cầu', const Color(0xffdc2626)),
-                        _chip(Icons.map_rounded, hasGoongApiKey ? 'Goong map' : 'OSM fallback', const Color(0xff0f172a)),
-                        _chip(Icons.sync, 'Đồng bộ backend web', const Color(0xff2563eb)),
+                        const Expanded(
+                          child: Text(
+                            'Tổng quan cứu hộ',
+                            style: TextStyle(fontSize: 12, color: Colors.black54, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () {
+                            setState(() {
+                              _overviewCollapsed = !_overviewCollapsed;
+                            });
+                          },
+                          icon: Icon(_overviewCollapsed ? Icons.unfold_more : Icons.unfold_less),
+                          tooltip: _overviewCollapsed ? 'Mở rộng' : 'Thu gọn',
+                          visualDensity: VisualDensity.compact,
+                        ),
                       ],
                     ),
+                    if (!_overviewCollapsed) ...[
+                      const SizedBox(height: 6),
+                      Text('${active.length} yêu cầu đang mở', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _chip(Icons.place_rounded, '${_rescues.length} tổng yêu cầu', const Color(0xffdc2626)),
+                          _chip(Icons.map_rounded, hasGoongApiKey ? 'Goong map' : 'OSM fallback', const Color(0xff0f172a)),
+                          _chip(Icons.sync, 'Đồng bộ backend web', const Color(0xff2563eb)),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
