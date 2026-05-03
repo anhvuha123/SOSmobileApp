@@ -158,18 +158,43 @@ class _SosScreenState extends State<SosScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xffeef2ff),
+      backgroundColor: const Color(0xfff4f7fc),
       appBar: AppBar(
-        backgroundColor: const Color(0xff0f172a),
-        title: const Text('Gửi SOS khẩn cấp'),
+        backgroundColor: const Color(0xff163a70),
+        title: const Row(
+          children: [
+            Icon(Icons.campaign_rounded, color: Colors.white),
+            SizedBox(width: 10),
+            Text('Gửi SOS khẩn cấp'),
+          ],
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xff1d4ed8), Color(0xff2563eb), Color(0xff3b82f6)],
+                ),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Gửi yêu cầu cứu hộ', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Colors.white)),
+                  SizedBox(height: 4),
+                  Text('Điền thông tin rõ ràng để điều phối nhanh nhất.', style: TextStyle(color: Color(0xffdbeafe))),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
             Card(
-              elevation: 8,
+              elevation: 3,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               child: Padding(
                 padding: const EdgeInsets.all(16),
@@ -206,7 +231,7 @@ class _SosScreenState extends State<SosScreen> {
             ),
             const SizedBox(height: 14),
             Card(
-              elevation: 8,
+              elevation: 3,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               child: Padding(
                 padding: const EdgeInsets.all(16),
@@ -303,7 +328,7 @@ class _SosScreenState extends State<SosScreen> {
                             : const Icon(Icons.send),
                         label: Text(_sending ? 'Đang gửi...' : 'Gửi SOS ngay'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xffdc2626),
+                          backgroundColor: const Color(0xff2563eb),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),

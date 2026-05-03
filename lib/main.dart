@@ -6,6 +6,7 @@ import 'screens/login_screen.dart';
 import 'screens/sos.dart';
 import 'screens/rescuer_screen.dart';
 import 'services/firebase_service.dart';
+import 'themes/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -60,33 +61,7 @@ class _AppMobileSOSState extends State<AppMobileSOS> {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Emergency Reporting',
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: const Color(0xffdc2626),
-        scaffoldBackgroundColor: const Color(0xfff6f7fb),
-        appBarTheme: const AppBarTheme(
-          centerTitle: true,
-          elevation: 0,
-          backgroundColor: Color(0xffdc2626),
-          foregroundColor: Colors.white,
-        ),
-        cardTheme: const CardThemeData(
-          elevation: 4,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(16)),
-          ),
-        ),
-        elevatedButtonTheme: ElevatedButtonThemeData(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xffdc2626),
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-            padding: const EdgeInsets.symmetric(vertical: 16),
-          ),
-        ),
-      ),
+      theme: AppTheme.lightTheme,
       home: switch (_initialRoute) {
         '/login' => const LoginScreen(),
         '/home' => const HomeScreen(),

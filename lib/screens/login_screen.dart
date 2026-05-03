@@ -15,6 +15,9 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  static const String _demoEmail = 'demo@gmail.com';
+  static const String _demoPassword = '@Demo123';
+
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   bool _isLoading = false;
@@ -27,11 +30,42 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  Future<bool> _tryTemporaryDemoLogin() async {
+    final email = _emailCtrl.text.trim().toLowerCase();
+    final password = _passwordCtrl.text.trim();
+
+    if (email != _demoEmail || password != _demoPassword) {
+      return false;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('auth_token', 'demo-local-token');
+    await prefs.setString('auth_username', _demoEmail);
+    await prefs.setString('auth_role', 'admin');
+    await prefs.setString('auth_userid', 'demo-local-user');
+    await prefs.setBool('demo_mode', true);
+
+    if (mounted) {
+      Navigator.of(context).pushReplacementNamed('/home');
+    }
+
+    return true;
+  }
+
   Future<void> _login() async {
     setState(() {
       _isLoading = true;
       _error = null;
     });
+
+    if (await _tryTemporaryDemoLogin()) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+      return;
+    }
 
     try {
       final uri = Uri.parse('${ApiConfig.baseUrl}/login');
@@ -57,6 +91,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('auth_token', token);
+      await prefs.setBool('demo_mode', false);
       await prefs.setString(
         'auth_username',
         body['username']?.toString() ??
@@ -88,156 +123,146 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xff0f172a), Color(0xff1e293b), Color(0xffdc2626)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 430),
-                child: Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(28),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.18),
-                        blurRadius: 30,
-                        offset: const Offset(0, 18),
-                      ),
-                    ],
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 400),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Logo & Title
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: color.primary,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.shield_rounded, color: Colors.white, size: 32),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                  const SizedBox(height: 20),
+                  Text(
+                    'Cứu hộ',
+                    style: text.headlineLarge?.copyWith(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Đăng nhập với tài khoản của bạn',
+                    style: text.bodyMedium?.copyWith(color: color.onSurface.withOpacity(0.6)),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 30),
+
+                  // Email Field
+                  TextField(
+                    controller: _emailCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Email',
+                      prefixIcon: const Icon(Icons.email_outlined),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    keyboardType: TextInputType.emailAddress,
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Password Field
+                  TextField(
+                    controller: _passwordCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Mật khẩu',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    obscureText: true,
+                  ),
+
+                  // Error Message
+                  if (_error != null) ...[
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: color.error.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: color.error.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.error_outline, color: color.error, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(_error ?? '', style: TextStyle(color: color.error, fontSize: 13)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  const SizedBox(height: 20),
+
+                  // Login Button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _login,
+                      child: _isLoading
+                          ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Text('Đăng nhập', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Demo Buttons Row
+                  Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(18),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xffdc2626), Color(0xfffb7185)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(22),
-                        ),
-                        child: const Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.shield,
-                                  color: Colors.white,
-                                  size: 28,
-                                ),
-                                SizedBox(width: 10),
-                                Text(
-                                  'FRRCP Mobile',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            SizedBox(height: 10),
-                            Text(
-                              'Đăng nhập để xem bản đồ, theo dõi SOS, và điều phối cứu hộ.',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                height: 1.35,
-                              ),
-                            ),
-                          ],
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () {
+                            _emailCtrl.text = _demoEmail;
+                            _passwordCtrl.text = _demoPassword;
+                          },
+                          child: const Text('Điền demo'),
                         ),
                       ),
-                      const SizedBox(height: 20),
-                      const Text(
-                        'Đăng nhập hệ thống',
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      const Text(
-                        'Dùng tài khoản web đã có sẵn để vào mobile.',
-                        style: TextStyle(fontSize: 14, color: Colors.black54),
-                      ),
-                      const SizedBox(height: 20),
-                      TextField(
-                        controller: _emailCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Email',
-                          border: OutlineInputBorder(),
-                        ),
-                        keyboardType: TextInputType.emailAddress,
-                      ),
-                      const SizedBox(height: 14),
-                      TextField(
-                        controller: _passwordCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Mật khẩu',
-                          border: OutlineInputBorder(),
-                        ),
-                        obscureText: true,
-                      ),
-                      const SizedBox(height: 20),
-                      ElevatedButton(
-                        onPressed: _isLoading ? null : _login,
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          backgroundColor: const Color(0xffdc2626),
-                        ),
-                        child: const Text(
-                          'Đăng nhập',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      if (_isLoading)
-                        const Center(child: CircularProgressIndicator()),
-                      if (_error != null)
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xfffef2f2),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: const Color(0xfffecaca)),
-                          ),
-                          child: Text(
-                            _error!,
-                            style: const TextStyle(color: Colors.red),
-                          ),
-                        ),
-                      const SizedBox(height: 14),
-                      Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: const Color(0xfff8fafc),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: const Text(
-                          'Demo: demo@gmail.com / @Demo123',
-                          style: TextStyle(fontSize: 13, color: Colors.black54),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: _isLoading ? null : () => _tryTemporaryDemoLogin(),
+                          child: const Text('Demo ngay'),
                         ),
                       ),
                     ],
                   ),
-                ),
+
+                  const SizedBox(height: 16),
+
+                  // Info Box
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: color.surfaceVariant,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 18, color: color.onSurface.withOpacity(0.6)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Demo: $_demoEmail / $_demoPassword',
+                            style: text.bodySmall?.copyWith(color: color.onSurface.withOpacity(0.6)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

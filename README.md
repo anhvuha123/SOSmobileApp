@@ -1,16 +1,25 @@
 # appmobilesos
 
-A new Flutter project.
+Flutter app for SOS reporting and rescue coordination.
 
-## Getting Started
+## Run
 
-This project is a starting point for a Flutter application.
+```bash
+flutter pub get
+flutter run
+```
 
-A few resources to get you started if this is your first Flutter project:
+## Demo mode
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+- Open the login screen and tap `Sử dụng demo`.
+- Then tap `Đăng nhập demo ngay` to enter offline/demo mode.
+- Demo mode uses in-memory sample rescues and still lets you:
+	- accept tasks,
+	- update status,
+	- send quick SOS,
+	- open directions.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Notes
+
+- Real login uses the backend at `lib/services/api_config.dart`.
+- Demo mode is enabled with the `demo_mode` preference and is disabled on real login.

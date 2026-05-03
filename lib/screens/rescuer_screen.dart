@@ -9,7 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/web_rescue.dart';
 import '../services/map_tiles.dart';
 import '../services/web_rescue_service.dart';
-import 'home_screen.dart';
+import 'report_screen.dart';
 
 class RescuerScreen extends StatefulWidget {
   static const String routeName = '/rescuer';
@@ -234,13 +234,20 @@ class _RescuerScreenState extends State<RescuerScreen> {
           children: [
             Icon(Icons.shield, color: Colors.white),
             SizedBox(width: 10),
-            Text('Bảng điều phối cứu hộ', style: TextStyle(fontWeight: FontWeight.w800)),
+            Text('Bảng điều phối', style: TextStyle(fontWeight: FontWeight.w800)),
           ],
         ),
         actions: [
-          IconButton(
-            onPressed: () => Navigator.pushReplacementNamed(context, HomeScreen.routeName),
-            icon: const Icon(Icons.switch_account, color: Colors.white),
+          TextButton.icon(
+            onPressed: () => Navigator.pushNamed(context, ReportScreen.routeName),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+              backgroundColor: Colors.white.withValues(alpha: 0.1),
+            ),
+            icon: const Icon(Icons.dashboard_rounded, size: 18),
+            label: const Text('Dashboard'),
           ),
           IconButton(
             onPressed: _refresh,
@@ -500,6 +507,50 @@ class _RescuerScreenState extends State<RescuerScreen> {
             ),
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () async {
+          if (_currentLocation == null) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vị trí chưa sẵn sàng')));
+            return;
+          }
+
+          final confirm = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Gửi SOS nhanh'),
+              content: const Text('Gửi tín hiệu SOS từ vị trí hiện tại tới hệ thống cứu hộ?'),
+              actions: [
+                TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Hủy')),
+                ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Gửi')),
+              ],
+            ),
+          );
+
+          if (confirm == true) {
+            try {
+              final id = await _service.createSos(
+                name: 'Đội cứu hộ (auto)',
+                phone: '',
+                address: 'Vị trí hiện tại',
+                note: 'SOS gửi từ ứng dụng đội cứu hộ',
+                victims: 1,
+                sosType: 'urgent',
+                lat: _currentLocation!.latitude,
+                lng: _currentLocation!.longitude,
+              );
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gửi SOS thành công ${id != null ? '#$id' : ''}')));
+              await _refresh(silent: true);
+            } catch (e) {
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Không thể gửi SOS: $e')));
+            }
+          }
+        },
+        icon: const Icon(Icons.warning_amber_rounded),
+        label: const Text('Gửi SOS'),
       ),
     );
   }

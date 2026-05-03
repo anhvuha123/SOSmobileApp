@@ -225,11 +225,6 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('Bản đồ cứu hộ', style: TextStyle(fontWeight: FontWeight.w800)),
         actions: [
           IconButton(
-            tooltip: 'Dashboard',
-            onPressed: () => Navigator.pushNamed(context, ReportScreen.routeName),
-            icon: const Icon(Icons.dashboard_rounded, color: Colors.white),
-          ),
-          IconButton(
             onPressed: _refresh,
             icon: const Icon(Icons.refresh, color: Colors.white),
           ),
@@ -247,104 +242,60 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: const EdgeInsets.only(bottom: 100),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
-                child: Stack(
+                child: FlutterMap(
+                  mapController: _mapController,
+                  options: MapOptions(initialCenter: _center, initialZoom: _zoom),
                   children: [
-                    FlutterMap(
-                      mapController: _mapController,
-                      options: MapOptions(initialCenter: _center, initialZoom: _zoom),
-                      children: [
-                        TileLayer(
-                          urlTemplate: mapTileUrl(_satelliteMode ? MapBaseLayer.satellite : MapBaseLayer.standard),
-                          userAgentPackageName: 'appmobilosos',
-                        ),
-                        MarkerLayer(
-                          markers: _rescues
-                              .where((r) => r.lat != 0 && r.lng != 0)
-                              .map((r) => Marker(
-                                    point: LatLng(r.lat, r.lng),
-                                    width: 36,
-                                    height: 36,
-                                    child: GestureDetector(
-                                      onTap: () => _moveTo(r),
-                                      child: Container(
-                                        decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          color: _selected?.id == r.id ? const Color(0xffdc2626) : const Color(0xffef4444),
-                                          border: Border.all(color: Colors.white, width: 2),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: _statusColor(r.status).withOpacity(0.4),
-                                              blurRadius: _selected?.id == r.id ? 12 : 8,
-                                              spreadRadius: _selected?.id == r.id ? 2 : 0,
-                                            ),
-                                          ],
-                                        ),
-                                        child: const Icon(Icons.location_on_rounded, color: Colors.white, size: 16),
-                                      ),
+                    TileLayer(
+                      urlTemplate: mapTileUrl(_satelliteMode ? MapBaseLayer.satellite : MapBaseLayer.standard),
+                      userAgentPackageName: 'appmobilosos',
+                    ),
+                    MarkerLayer(
+                      markers: _rescues
+                          .where((r) => r.lat != 0 && r.lng != 0)
+                          .map((r) => Marker(
+                            point: LatLng(r.lat, r.lng),
+                            width: 36,
+                            height: 36,
+                            child: GestureDetector(
+                              onTap: () => _moveTo(r),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: _selected?.id == r.id ? const Color(0xffdc2626) : const Color(0xffef4444),
+                                  border: Border.all(color: Colors.white, width: 2),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: _statusColor(r.status).withOpacity(0.4),
+                                      blurRadius: _selected?.id == r.id ? 12 : 8,
+                                      spreadRadius: _selected?.id == r.id ? 2 : 0,
                                     ),
-                                  ))
-                              .toList(),
-                        ),
-                        if (_userLocation != null)
-                          MarkerLayer(
-                            markers: [
-                              Marker(
-                                point: _userLocation!,
-                                width: 32,
-                                height: 32,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: Theme.of(context).colorScheme.primary,
-                                    border: Border.all(color: Colors.white, width: 2),
-                                  ),
-                                  child: const Icon(Icons.my_location_rounded, color: Colors.white, size: 14),
+                                  ],
                                 ),
+                                child: const Icon(Icons.location_on_rounded, color: Colors.white, size: 16),
                               ),
-                            ],
-                          ),
-                      ],
+                            ),
+                          ))
+                          .toList(),
                     ),
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Colors.white.withOpacity(0.16),
-                                Colors.white.withOpacity(0.02),
-                                Colors.transparent,
-                              ],
+                    if (_userLocation != null)
+                      MarkerLayer(
+                        markers: [
+                          Marker(
+                            point: _userLocation!,
+                            width: 32,
+                            height: 32,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Theme.of(context).colorScheme.primary,
+                                border: Border.all(color: Colors.white, width: 2),
+                              ),
+                              child: Icon(Icons.my_location_rounded, color: Colors.white, size: 14),
                             ),
                           ),
-                        ),
+                        ],
                       ),
-                    ),
-                    Positioned(
-                      left: 12,
-                      top: 12,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.9),
-                          borderRadius: BorderRadius.circular(999),
-                          boxShadow: const [BoxShadow(color: Color(0x22000000), blurRadius: 6)],
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.wb_sunny_rounded, size: 14, color: Color(0xffca8a04)),
-                            SizedBox(width: 6),
-                            Text(
-                              'Lớp phủ ban ngày',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xff334155)),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -477,7 +428,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Container(
               decoration: const BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.only(topLeft: Radius.circular(16), topRight: Radius.circular(16)),
+                borderRadius: BorderRadius.vertical(topLeft: Radius.circular(16), topRight: Radius.circular(16)),
                 boxShadow: [BoxShadow(color: Color(0x22000000), blurRadius: 12, offset: Offset(0, -4))],
               ),
               child: Column(
