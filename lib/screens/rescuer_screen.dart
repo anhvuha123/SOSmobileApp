@@ -174,16 +174,34 @@ class _RescuerScreenState extends State<RescuerScreen> {
 
     final origin = '${_currentLocation!.latitude},${_currentLocation!.longitude}';
     final destination = '${rescue.lat},${rescue.lng}';
-    final url = 'https://www.google.com/maps/dir/?api=1&origin=$origin&destination=$destination&travelmode=driving';
-
-    final uri = Uri.parse(url);
+    
+    // Try Google Maps first
+    final googleMapsUrl = 'https://www.google.com/maps/dir/?api=1&origin=$origin&destination=$destination&travelmode=driving';
+    Uri uri = Uri.parse(googleMapsUrl);
+    
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      return;
+    }
+    
+    // Fallback: Try Google Maps app
+    final appUrl = 'geo:$destination?q=$destination';
+    uri = Uri.parse(appUrl);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      return;
+    }
+    
+    // Last fallback: Try Apple Maps format (if on iOS)
+    final mapsUrl = 'maps://maps.google.com/maps?daddr=$destination&saddr=$origin';
+    uri = Uri.parse(mapsUrl);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
       return;
     }
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Không mở được chỉ đường')));
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vui lòng cài đặt Google Maps hoặc ứng dụng bản đồ khác')));
   }
 
   Widget _chip(IconData icon, String label, Color color) {

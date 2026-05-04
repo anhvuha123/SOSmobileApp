@@ -9,7 +9,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/web_rescue.dart';
 import '../services/map_tiles.dart';
 import '../services/web_rescue_service.dart';
-import 'report_screen.dart';
 import 'rescuer_screen.dart';
 import 'sos.dart';
 
@@ -428,7 +427,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Container(
               decoration: const BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.vertical(topLeft: Radius.circular(16), topRight: Radius.circular(16)),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
                 boxShadow: [BoxShadow(color: Color(0x22000000), blurRadius: 12, offset: Offset(0, -4))],
               ),
               child: Column(

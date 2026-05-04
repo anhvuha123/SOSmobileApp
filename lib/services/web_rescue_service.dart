@@ -57,6 +57,31 @@ class WebRescueService {
     ),
   ];
 
+  // Cache rescue data for 30 seconds
+  static List<WebRescue>? _rescueCache;
+  static DateTime? _rescueCacheTime;
+  static const int _cacheValiditySeconds = 30;
+
+  static bool _isCacheValid() {
+    if (_rescueCache == null || _rescueCacheTime == null) return false;
+    final diff = DateTime.now().difference(_rescueCacheTime!);
+    return diff.inSeconds < _cacheValiditySeconds;
+  }
+
+  static void _setCache(List<WebRescue> rescues) {
+    _rescueCache = rescues;
+    _rescueCacheTime = DateTime.now();
+  }
+
+  static List<WebRescue>? _getCache() {
+    if (_isCacheValid()) {
+      return _rescueCache;
+    }
+    _rescueCache = null;
+    _rescueCacheTime = null;
+    return null;
+  }
+
   Future<String?> _token() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token');
@@ -81,17 +106,44 @@ class WebRescueService {
     return headers;
   }
 
+  Future<http.Response> _requestWithFallbacks({
+    required String action,
+    required Future<http.Response> Function(String baseUrl) request,
+  }) async {
+    Object? lastError;
+
+    for (final baseUrl in ApiConfig.rescueBaseUrlCandidates()) {
+      try {
+        final resp = await request(baseUrl);
+        if (resp.statusCode >= 200 && resp.statusCode < 300) {
+          return resp;
+        }
+
+        lastError = Exception('$action thất bại: ${resp.statusCode} ${resp.body}');
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    throw Exception('Không kết nối được tới backend. Lỗi cuối: $lastError');
+  }
+
   Future<List<WebRescue>> getRescues() async {
     if (await _isDemoMode()) {
       return List<WebRescue>.of(_demoRescues);
     }
 
-    final uri = Uri.parse('${ApiConfig.baseUrl}/rescues');
-    final resp = await http.get(uri, headers: await _headers());
-
-    if (resp.statusCode != 200) {
-      throw Exception('Lấy rescues thất bại: ${resp.statusCode}');
+    // Check cache first
+    final cachedRescues = _getCache();
+    if (cachedRescues != null) {
+      return List<WebRescue>.of(cachedRescues);
     }
+
+    final headers = await _headers();
+    final resp = await _requestWithFallbacks(
+      action: 'Lấy rescues',
+      request: (baseUrl) => http.get(Uri.parse('$baseUrl/rescues'), headers: headers),
+    );
 
     final decoded = jsonDecode(resp.body);
     final list = decoded is List
@@ -100,10 +152,15 @@ class WebRescueService {
             ? decoded['data'] as List
             : <dynamic>[];
 
-    return list
+    final rescues = list
         .whereType<Map>()
         .map((item) => WebRescue.fromJson(item.cast<String, dynamic>()))
         .toList();
+
+    // Cache the result
+    _setCache(rescues);
+
+    return rescues;
   }
 
   Future<int?> createSos({
@@ -140,7 +197,6 @@ class WebRescueService {
       return nextId;
     }
 
-    final uri = Uri.parse('${ApiConfig.baseUrl}/rescues');
     final body = {
       'name': name,
       'phone': phone,
@@ -153,15 +209,11 @@ class WebRescueService {
       'source_url': sourceUrl ?? '',
     };
 
-    final resp = await http.post(
-      uri,
-      headers: await _headers(),
-      body: jsonEncode(body),
+    final headers = await _headers();
+    final resp = await _requestWithFallbacks(
+      action: 'Gửi SOS',
+      request: (baseUrl) => http.post(Uri.parse('$baseUrl/rescues'), headers: headers, body: jsonEncode(body)),
     );
-
-    if (resp.statusCode < 200 || resp.statusCode >= 300) {
-      throw Exception('Gửi SOS thất bại: ${resp.statusCode} ${resp.body}');
-    }
 
     if (resp.body.isEmpty) return null;
 
@@ -220,23 +272,27 @@ class WebRescueService {
       'source_url': sourceUrl ?? '',
     };
 
-    final candidates = <Uri>[
-      Uri.parse('${ApiConfig.baseUrl}/rescues/$id'),
-      Uri.parse('${ApiConfig.baseUrl}/rescues/$id/details'),
-    ];
+    final paths = <String>['/rescues/$id', '/rescues/$id/details'];
+    Object? lastError;
+    final headers = await _headers();
 
-    for (final uri in candidates) {
-      final resp = await http.patch(
-        uri,
-        headers: await _headers(),
-        body: jsonEncode(payload),
-      );
-      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+    for (final path in paths) {
+      try {
+        await _requestWithFallbacks(
+          action: 'Cập nhật SOS',
+          request: (baseUrl) => http.patch(
+            Uri.parse('$baseUrl$path'),
+            headers: headers,
+            body: jsonEncode(payload),
+          ),
+        );
         return;
+      } catch (e) {
+        lastError = e;
       }
     }
 
-    throw Exception('Không cập nhật được thông tin SOS #$id');
+    throw Exception('Không cập nhật được thông tin SOS #$id. Lỗi cuối: $lastError');
   }
 
   Future<void> updateRescueStatus(int id, String status) async {
@@ -247,23 +303,27 @@ class WebRescueService {
       return;
     }
 
-    final candidates = <Uri>[
-      Uri.parse('${ApiConfig.baseUrl}/rescues/$id/status'),
-      Uri.parse('${ApiConfig.baseUrl}/rescues/$id'),
-    ];
+    final paths = <String>['/rescues/$id/status', '/rescues/$id'];
+    Object? lastError;
+    final headers = await _headers();
 
-    for (final uri in candidates) {
-      final resp = await http.patch(
-        uri,
-        headers: await _headers(),
-        body: jsonEncode({'status': status}),
-      );
-      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+    for (final path in paths) {
+      try {
+        await _requestWithFallbacks(
+          action: 'Cập nhật trạng thái rescue',
+          request: (baseUrl) => http.patch(
+            Uri.parse('$baseUrl$path'),
+            headers: headers,
+            body: jsonEncode({'status': status}),
+          ),
+        );
         return;
+      } catch (e) {
+        lastError = e;
       }
     }
 
-    throw Exception('Không cập nhật được trạng thái rescue #$id');
+    throw Exception('Không cập nhật được trạng thái rescue #$id. Lỗi cuối: $lastError');
   }
 
   Future<void> updateRescuerLocation(double lat, double lng) async {
@@ -271,11 +331,10 @@ class WebRescueService {
       return;
     }
 
-    final uri = Uri.parse('${ApiConfig.baseUrl}/rescuer/location');
-    final resp = await http.put(
-      uri,
-      headers: await _headers(),
-      body: jsonEncode({'lat': lat, 'lng': lng}),
+    final headers = await _headers();
+    final resp = await _requestWithFallbacks(
+      action: 'Cập nhật GPS đội cứu hộ',
+      request: (baseUrl) => http.put(Uri.parse('$baseUrl/rescuer/location'), headers: headers, body: jsonEncode({'lat': lat, 'lng': lng})),
     );
 
     if (resp.statusCode < 200 || resp.statusCode >= 300) {

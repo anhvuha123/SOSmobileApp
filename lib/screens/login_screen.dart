@@ -47,7 +47,7 @@ class _LoginScreenState extends State<LoginScreen> {
     await prefs.setBool('demo_mode', true);
 
     if (mounted) {
-      Navigator.of(context).pushReplacementNamed('/home');
+      Navigator.of(context).pushReplacementNamed('/report');
     }
 
     return true;
@@ -91,8 +91,8 @@ class _LoginScreenState extends State<LoginScreen> {
         final role = body['role']?.toString() ?? '';
         final route = switch (role) {
           'rescuer' => '/rescuer',
-          'admin' => '/home',
-          _ => '/sos',
+          'admin' => '/report',
+          _ => '/home',
         };
         Navigator.of(context).pushReplacementNamed(route);
       }

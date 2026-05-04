@@ -39,8 +39,8 @@ class _AppMobileSOSState extends State<AppMobileSOS> {
     if (token != null && token.isNotEmpty) {
       route = switch (role) {
         'rescuer' => RescuerScreen.routeName,
-        'admin' => HomeScreen.routeName,
-        _ => SosScreen.routeName,
+        'admin' => ReportScreen.routeName,
+        _ => HomeScreen.routeName,
       };
     }
 
@@ -64,6 +64,7 @@ class _AppMobileSOSState extends State<AppMobileSOS> {
       theme: AppTheme.lightTheme,
       home: switch (_initialRoute) {
         '/login' => const LoginScreen(),
+        '/report' => const ReportScreen(),
         '/home' => const HomeScreen(),
         '/rescuer' => const RescuerScreen(),
         '/sos' => const SosScreen(),
