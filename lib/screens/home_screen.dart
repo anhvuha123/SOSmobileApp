@@ -25,6 +25,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final MapController _mapController = MapController();
   final WebRescueService _service = const WebRescueService();
+  final TextEditingController _searchCtrl = TextEditingController();
 
   Timer? _polling;
   StreamSubscription<Position>? _locationSub;
@@ -35,6 +36,8 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _loading = true;
   String? _error;
   bool _satelliteMode = false;
+  String _searchQuery = '';
+  String _statusFilter = 'all';
 
   LatLng _center = const LatLng(10.762622, 106.660172);
   double _zoom = 13;
@@ -51,6 +54,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _polling?.cancel();
     _locationSub?.cancel();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
@@ -193,6 +197,107 @@ class _HomeScreenState extends State<HomeScreen> {
     return '${diff.inDays}d';
   }
 
+  List<WebRescue> get _visibleRescues {
+    final query = _searchQuery.trim().toLowerCase();
+    return _rescues.where((rescue) {
+      final matchesStatus = _statusFilter == 'all' || rescue.status == _statusFilter;
+      final matchesQuery = query.isEmpty ||
+          rescue.address.toLowerCase().contains(query) ||
+          rescue.name.toLowerCase().contains(query) ||
+          rescue.phone.toLowerCase().contains(query) ||
+          rescue.note.toLowerCase().contains(query) ||
+          rescue.sosType.toLowerCase().contains(query);
+      return matchesStatus && matchesQuery;
+    }).toList();
+  }
+
+  int get _doneCount => _rescues.where((r) => r.status == 'done').length;
+
+  double get _acceptRate {
+    if (_rescues.isEmpty) return 0;
+    return (_doneCount / _rescues.length) * 100;
+  }
+
+  Future<void> _showInfoSheet({required String title, required List<Widget> children}) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.7,
+          minChildSize: 0.45,
+          maxChildSize: 0.9,
+          builder: (context, scrollController) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.only(topLeft: Radius.circular(24), topRight: Radius.circular(24)),
+              ),
+              child: ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                children: [
+                  Text(title, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 16),
+                  ...children,
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showProfileSheet() async {
+    await _showInfoSheet(
+      title: 'Thông tin cá nhân',
+      children: [
+        _InfoCardRow(icon: Icons.person_outline, label: 'Vai trò', value: 'Điều phối viên cứu hộ'),
+        const SizedBox(height: 12),
+        _InfoCardRow(icon: Icons.map_outlined, label: 'Đang theo dõi', value: '${_visibleRescues.length} nhiệm vụ'),
+        const SizedBox(height: 12),
+        _InfoCardRow(icon: Icons.location_on_outlined, label: 'Nhiệm vụ đang chọn', value: _selected?.address ?? 'Chưa chọn'),
+        const SizedBox(height: 12),
+        _InfoCardRow(icon: Icons.phone_outlined, label: 'Người cầu cứu', value: _selected?.name ?? 'Chưa có dữ liệu'),
+        const SizedBox(height: 20),
+        FilledButton.icon(
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.close),
+          label: const Text('Đóng'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showStatsSheet() async {
+    final total = _rescues.length;
+    final newCount = _rescues.where((r) => r.status == 'new').length;
+    final rescuing = _rescues.where((r) => r.status == 'rescuing').length;
+    await _showInfoSheet(
+      title: 'Thống kê cứu hộ',
+      children: [
+        _InfoCardRow(icon: Icons.list_alt_rounded, label: 'Tổng nhiệm vụ', value: '$total'),
+        const SizedBox(height: 12),
+        _InfoCardRow(icon: Icons.warning_amber_rounded, label: 'Mới', value: '$newCount'),
+        const SizedBox(height: 12),
+        _InfoCardRow(icon: Icons.emergency_rounded, label: 'Đang cứu hộ', value: '$rescuing'),
+        const SizedBox(height: 12),
+        _InfoCardRow(icon: Icons.check_circle_rounded, label: 'Hoàn thành', value: '$_doneCount'),
+        const SizedBox(height: 12),
+        _InfoCardRow(icon: Icons.percent_rounded, label: 'Tỷ lệ chấp nhận', value: '${_acceptRate.toStringAsFixed(1)}%'),
+        const SizedBox(height: 20),
+        FilledButton.icon(
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.close),
+          label: const Text('Đóng'),
+        ),
+      ],
+    );
+  }
+
   Widget _controlButton(IconData icon, VoidCallback onPressed) {
     return Container(
       width: 40,
@@ -215,11 +320,70 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final active = _rescues.where((r) => r.status == 'new' || r.status == 'rescuing').toList();
+    final visibleRescues = _visibleRescues;
+    final active = visibleRescues.where((r) => r.status == 'new' || r.status == 'rescuing').toList();
 
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
+      drawer: Drawer(
+        child: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                color: Theme.of(context).colorScheme.primary,
+                child: const Row(
+                  children: [
+                    CircleAvatar(radius: 22, backgroundColor: Colors.white, child: Icon(Icons.menu, color: Color(0xff1d4ed8))),
+                    SizedBox(width: 12),
+                    Expanded(child: Text('Options', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700))),
+                  ],
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.person_outline),
+                title: const Text('Thông tin cá nhân'),
+                onTap: () {
+                  Navigator.pop(context);
+                  WidgetsBinding.instance.addPostFrameCallback((_) => _showProfileSheet());
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.bar_chart),
+                title: const Text('Thống kê'),
+                subtitle: const Text('Đã hoàn thành, tỷ lệ chấp nhận'),
+                onTap: () {
+                  Navigator.pop(context);
+                  WidgetsBinding.instance.addPostFrameCallback((_) => _showStatsSheet());
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.bug_report),
+                title: const Text('Báo lỗi'),
+                onTap: () => Navigator.pop(context),
+              ),
+              const Spacer(),
+              ListTile(
+                leading: const Icon(Icons.logout, color: Colors.red),
+                title: const Text('Đăng xuất', style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
       appBar: AppBar(
+        leading: Builder(
+          builder: (ctx) => IconButton(
+            tooltip: 'Menu',
+            onPressed: () => Scaffold.of(ctx).openDrawer(),
+            icon: const Icon(Icons.menu_rounded, color: Colors.white),
+          ),
+        ),
         backgroundColor: Theme.of(context).colorScheme.primary,
         elevation: 0,
         title: const Text('Bản đồ cứu hộ', style: TextStyle(fontWeight: FontWeight.w800)),
@@ -229,22 +393,69 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () => Navigator.pushNamed(context, ReportScreen.routeName),
             icon: const Icon(Icons.dashboard_rounded, color: Colors.white),
           ),
-          IconButton(
-            onPressed: _refresh,
-            icon: const Icon(Icons.refresh, color: Colors.white),
-          ),
-          IconButton(
-            onPressed: () => Navigator.pushNamed(context, RescuerScreen.routeName),
-            icon: const Icon(Icons.person, color: Colors.white),
-          ),
+          IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh, color: Colors.white)),
+          IconButton(onPressed: () => Navigator.pushNamed(context, RescuerScreen.routeName), icon: const Icon(Icons.person, color: Colors.white)),
         ],
       ),
       body: Stack(
         children: [
-          // MAP - Main area
+          Positioned(
+            left: 12,
+            right: 12,
+            top: 12,
+            child: SafeArea(
+              bottom: false,
+              child: Column(
+                children: [
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.96),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: const [BoxShadow(color: Color(0x22000000), blurRadius: 10, offset: Offset(0, 4))],
+                    ),
+                    child: TextField(
+                      controller: _searchCtrl,
+                      onChanged: (value) => setState(() => _searchQuery = value),
+                      decoration: InputDecoration(
+                        hintText: 'Tìm theo địa điểm, tên người cầu cứu, số điện thoại...',
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        suffixIcon: _searchQuery.isEmpty
+                            ? null
+                            : IconButton(
+                                tooltip: 'Xóa tìm kiếm',
+                                onPressed: () {
+                                  _searchCtrl.clear();
+                                  setState(() => _searchQuery = '');
+                                },
+                                icon: const Icon(Icons.clear_rounded),
+                              ),
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _StatusPill(label: 'Tất cả', selected: _statusFilter == 'all', onTap: () => setState(() => _statusFilter = 'all')),
+                        const SizedBox(width: 8),
+                        _StatusPill(label: 'Mới', selected: _statusFilter == 'new', onTap: () => setState(() => _statusFilter = 'new')),
+                        const SizedBox(width: 8),
+                        _StatusPill(label: 'Đang cứu hộ', selected: _statusFilter == 'rescuing', onTap: () => setState(() => _statusFilter = 'rescuing')),
+                        const SizedBox(width: 8),
+                        _StatusPill(label: 'Hoàn thành', selected: _statusFilter == 'done', onTap: () => setState(() => _statusFilter = 'done')),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
           Positioned.fill(
             child: Padding(
-              padding: const EdgeInsets.only(bottom: 100),
+              padding: const EdgeInsets.only(bottom: 136),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
                 child: Stack(
@@ -258,7 +469,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           userAgentPackageName: 'appmobilosos',
                         ),
                         MarkerLayer(
-                          markers: _rescues
+                          markers: visibleRescues
                               .where((r) => r.lat != 0 && r.lng != 0)
                               .map((r) => Marker(
                                     point: LatLng(r.lat, r.lng),
@@ -337,10 +548,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           children: [
                             Icon(Icons.wb_sunny_rounded, size: 14, color: Color(0xffca8a04)),
                             SizedBox(width: 6),
-                            Text(
-                              'Lớp phủ ban ngày',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xff334155)),
-                            ),
+                            Text('Lớp phủ ban ngày', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xff334155))),
                           ],
                         ),
                       ),
@@ -350,8 +558,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-
-          // Controls - Top right
           Positioned(
             right: 12,
             top: 12,
@@ -379,101 +585,67 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-
-          // Detail Card - Bottom when selected
           if (_selected != null)
             Positioned(
-              bottom: 110,
+              bottom: 124,
               left: 12,
               right: 12,
-              child: GestureDetector(
-                onTap: () {}, // Prevent dismissal on tap
-                child: Card(
-                  elevation: 8,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _selected!.address,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '${_selected!.victims} người • ${_timeText(_selected!.createdAt)}',
-                                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                                  ),
-                                ],
-                              ),
+              child: Card(
+                elevation: 8,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(_selected!.address, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+                                const SizedBox(height: 4),
+                                Text('${_selected!.victims} người • ${_timeText(_selected!.createdAt)}', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                              ],
                             ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: _statusColor(_selected!.status).withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                _labelStatus(_selected!.status),
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: _statusColor(_selected!.status),
-                                ),
-                              ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(color: _statusColor(_selected!.status).withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
+                            child: Text(_labelStatus(_selected!.status), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: _statusColor(_selected!.status))),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () async {
+                                await _setStatus(_selected!, 'rescuing');
+                                await _openDirections(_selected!);
+                              },
+                              icon: const Icon(Icons.navigation, size: 16),
+                              label: const Text('Chỉ đường'),
+                              style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 8), backgroundColor: Theme.of(context).colorScheme.primary),
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: () async {
-                                  await _setStatus(_selected!, 'rescuing');
-                                  await _openDirections(_selected!);
-                                },
-                                icon: const Icon(Icons.navigation, size: 16),
-                                label: const Text('Chỉ đường'),
-                                style: ElevatedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(vertical: 8),
-                                  backgroundColor: Theme.of(context).colorScheme.primary,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: FilledButton.tonal(
-                                onPressed: () => _setStatus(_selected!, 'done'),
-                                child: const Text('Xong'),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(child: FilledButton.tonal(onPressed: () => _setStatus(_selected!, 'done'), child: const Text('Xong'))),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
-
-          // List - Bottom sheet (MINIMAL)
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
-            height: 100,
+            height: 136,
             child: Container(
               decoration: const BoxDecoration(
                 color: Colors.white,
@@ -483,22 +655,12 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 children: [
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
                     child: Row(
                       children: [
-                        Container(
-                          width: 4,
-                          height: 20,
-                          decoration: BoxDecoration(
-                            color: const Color(0xffdc2626),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
+                        Container(width: 4, height: 20, decoration: BoxDecoration(color: const Color(0xffdc2626), borderRadius: BorderRadius.circular(2))),
                         const SizedBox(width: 8),
-                        Text(
-                          '${active.length} đang mở • ${_rescues.length} tổng',
-                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-                        ),
+                        Text('${active.length} đang mở • ${_rescues.length} tổng', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
                         const Spacer(),
                         if (_loading)
                           const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
@@ -515,11 +677,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         : _error != null
                             ? Center(child: Text(_error!, style: const TextStyle(fontSize: 12)))
                             : ListView.builder(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                                 scrollDirection: Axis.horizontal,
-                                itemCount: _rescues.length,
+                                itemCount: visibleRescues.length,
                                 itemBuilder: (context, index) {
-                                  final rescue = _rescues[index];
+                                  final rescue = visibleRescues[index];
                                   final isSelected = _selected?.id == rescue.id;
                                   return GestureDetector(
                                     onTap: () => _moveTo(rescue),
@@ -530,36 +692,18 @@ class _HomeScreenState extends State<HomeScreen> {
                                       decoration: BoxDecoration(
                                         color: isSelected ? Theme.of(context).colorScheme.primary.withOpacity(0.1) : Colors.grey.shade100,
                                         borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(
-                                          color: isSelected ? Theme.of(context).colorScheme.primary : Colors.transparent,
-                                          width: 2,
-                                        ),
+                                        border: Border.all(color: isSelected ? Theme.of(context).colorScheme.primary : Colors.transparent, width: 2),
                                       ),
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         mainAxisAlignment: MainAxisAlignment.center,
                                         children: [
-                                          Text(
-                                            rescue.address,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11),
-                                          ),
+                                          Text(rescue.address, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11)),
                                           const SizedBox(height: 4),
                                           Container(
                                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                            decoration: BoxDecoration(
-                                              color: _statusColor(rescue.status).withOpacity(0.2),
-                                              borderRadius: BorderRadius.circular(4),
-                                            ),
-                                            child: Text(
-                                              _labelStatus(rescue.status),
-                                              style: TextStyle(
-                                                fontSize: 9,
-                                                fontWeight: FontWeight.w700,
-                                                color: _statusColor(rescue.status),
-                                              ),
-                                            ),
+                                            decoration: BoxDecoration(color: _statusColor(rescue.status).withOpacity(0.2), borderRadius: BorderRadius.circular(4)),
+                                            child: Text(_labelStatus(rescue.status), style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: _statusColor(rescue.status))),
                                           ),
                                         ],
                                       ),
@@ -572,10 +716,8 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-
-          // SOS Button - Center bottom
           Positioned(
-            bottom: 110,
+            bottom: 124,
             left: 0,
             right: 0,
             child: Center(
@@ -586,25 +728,76 @@ class _HomeScreenState extends State<HomeScreen> {
                   height: 64,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    gradient: const RadialGradient(
-                      colors: [Color(0xffff8a8a), Color(0xffdc2626)],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xffdc2626).withOpacity(0.5),
-                        blurRadius: 16,
-                        spreadRadius: 2,
-                      ),
-                    ],
+                    gradient: const RadialGradient(colors: [Color(0xffff8a8a), Color(0xffdc2626)]),
+                    boxShadow: [BoxShadow(color: const Color(0xffdc2626).withOpacity(0.5), blurRadius: 16, spreadRadius: 2)],
                   ),
-                  child: const Center(
-                    child: Text(
-                      'SOS',
-                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 1),
-                    ),
-                  ),
+                  child: const Center(child: Text('SOS', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 1))),
                 ),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({required this.label, required this.selected, required this.onTap});
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ChoiceChip(
+      selected: selected,
+      onSelected: (_) => onTap(),
+      label: Text(label),
+      labelStyle: TextStyle(
+        color: selected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurfaceVariant,
+        fontWeight: FontWeight.w700,
+        fontSize: 12,
+      ),
+      selectedColor: theme.colorScheme.primary,
+      backgroundColor: Colors.white,
+      side: BorderSide(color: selected ? theme.colorScheme.primary : theme.colorScheme.outlineVariant),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+    );
+  }
+}
+
+class _InfoCardRow extends StatelessWidget {
+  const _InfoCardRow({required this.icon, required this.label, required this.value});
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.7)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: theme.colorScheme.primary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 4),
+                Text(value, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+              ],
             ),
           ),
         ],

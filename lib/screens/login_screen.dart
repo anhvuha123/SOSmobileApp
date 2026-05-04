@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -68,23 +69,8 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     try {
-      final uri = Uri.parse('${ApiConfig.baseUrl}/login');
-      final resp = await http.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'email': _emailCtrl.text.trim().toLowerCase(),
-          'password': _passwordCtrl.text.trim(),
-        }),
-      );
-
-      if (resp.statusCode != 200) {
-        throw Exception('Login thất bại ${resp.statusCode}: ${resp.body}');
-      }
-
-      final body = jsonDecode(resp.body);
-      final token =
-          body['token']?.toString() ?? body['accessToken']?.toString();
+      final body = await _loginWithFallbacks();
+      final token = body['token']?.toString() ?? body['accessToken']?.toString();
       if (token == null || token.isEmpty) {
         throw Exception('Login thành công nhưng không nhận token');
       }
@@ -110,15 +96,53 @@ class _LoginScreenState extends State<LoginScreen> {
         };
         Navigator.of(context).pushReplacementNamed(route);
       }
-    } catch (e) {
+    } on SocketException {
       setState(() {
-        _error = e.toString();
+        _error = 'Không kết nối được tới backend. Kiểm tra lại API_BASE_URL hoặc địa chỉ server.';
+      });
+    } catch (e) {
+      final message = e.toString();
+      setState(() {
+        _error = message.contains('ClientException')
+            ? 'Không gọi được API đăng nhập. Kiểm tra server đang chạy và địa chỉ backend.'
+            : message;
       });
     } finally {
       setState(() {
         _isLoading = false;
       });
     }
+  }
+
+  Future<Map<String, dynamic>> _loginWithFallbacks() async {
+    Object? lastError;
+    for (final baseUrl in ApiConfig.loginBaseUrlCandidates()) {
+      try {
+        final uri = Uri.parse('$baseUrl/login');
+        final resp = await http.post(
+          uri,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'email': _emailCtrl.text.trim().toLowerCase(),
+            'password': _passwordCtrl.text.trim(),
+          }),
+        );
+
+        if (resp.statusCode != 200) {
+          throw Exception('Login thất bại ${resp.statusCode}: ${resp.body}');
+        }
+
+        final decoded = jsonDecode(resp.body);
+        if (decoded is! Map<String, dynamic>) {
+          throw Exception('Phản hồi đăng nhập không hợp lệ');
+        }
+        return decoded;
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    throw Exception('Không kết nối được tới backend đăng nhập. Lỗi cuối: $lastError');
   }
 
   @override

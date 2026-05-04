@@ -55,6 +55,21 @@ class ReportScreen extends StatefulWidget {
 class _ReportScreenState extends State<ReportScreen> {
   final WebRescueService _service = const WebRescueService();
 
+  Future<void> _logout() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Đăng xuất'),
+        content: const Text('Bạn chắc chắn muốn đăng xuất?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Hủy')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Đăng xuất', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (confirm == true) Navigator.pushNamedAndRemoveUntil(context, '/login', (r) => false);
+  }
+
   bool _loading = true;
   String? _error;
   List<WebRescue> _rescues = const [];
@@ -175,7 +190,32 @@ class _ReportScreenState extends State<ReportScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xfff4f7fc),
+      drawer: Drawer(
+        child: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                color: Theme.of(context).colorScheme.primary,
+                child: Row(children: const [CircleAvatar(radius: 22, backgroundColor: Colors.white, child: Icon(Icons.person)), SizedBox(width: 12), Expanded(child: Text('Tài khoản', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)))]),
+              ),
+              ListTile(leading: const Icon(Icons.person_outline), title: const Text('Thông tin cá nhân'), onTap: () {
+                Navigator.pop(context);
+              }),
+              ListTile(leading: const Icon(Icons.bar_chart), title: const Text('Thống kê'), subtitle: const Text('Đã hoàn thành, tỷ lệ chấp nhận'), onTap: () => Navigator.pop(context)),
+              ListTile(leading: const Icon(Icons.bug_report), title: const Text('Báo lỗi'), onTap: () => Navigator.pop(context)),
+              const Spacer(),
+              ListTile(leading: const Icon(Icons.logout, color: Colors.red), title: const Text('Đăng xuất', style: TextStyle(color: Colors.red)), onTap: () {
+                Navigator.pop(context);
+                _logout();
+              }),
+            ],
+          ),
+        ),
+      ),
       appBar: AppBar(
+        leading: Builder(builder: (ctx) => IconButton(onPressed: () => Scaffold.of(ctx).openDrawer(), icon: const Icon(Icons.menu))),
         scrolledUnderElevation: 0,
         backgroundColor: Theme.of(context).colorScheme.surface,
         foregroundColor: Theme.of(context).colorScheme.onSurface,
